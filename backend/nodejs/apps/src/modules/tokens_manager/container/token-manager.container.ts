@@ -65,7 +65,6 @@ export class TokenManagerContainer {
         .bind<RedisService>('RedisService')
         .toConstantValue(redisService);
 
-      // Initialize KeyValueStoreService for PrometheusService dependency
       const configurationManagerConfig = container.get<ConfigurationManagerConfig>('ConfigurationManagerConfig');
       const keyValueStoreService = KeyValueStoreService.getInstance(
         configurationManagerConfig,

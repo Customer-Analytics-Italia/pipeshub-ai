@@ -13,7 +13,6 @@ import { z } from 'zod';
 
 import { AuthMiddleware } from '../../../libs/middlewares/auth.middleware';
 import { ValidationMiddleware } from '../../../libs/middlewares/validation.middleware';
-import { metricsMiddleware } from '../../../libs/middlewares/prometheus.middleware';
 import { AppConfig } from '../../tokens_manager/config/config';
 import {
   getRegistryToolsets,
@@ -262,7 +261,6 @@ export function createToolsetsRouter(container: Container): Router {
   router.get(
     '/registry',
     authMiddleware.authenticate,
-    metricsMiddleware(container),
     ValidationMiddleware.validate(toolsetListSchema),
     getRegistryToolsets(config)
   );
@@ -274,7 +272,6 @@ export function createToolsetsRouter(container: Container): Router {
   router.get(
     '/registry/:toolsetType/schema',
     authMiddleware.authenticate,
-    metricsMiddleware(container),
     ValidationMiddleware.validate(toolsetTypeParamSchema),
     getToolsetSchema(config)
   );
@@ -290,7 +287,6 @@ export function createToolsetsRouter(container: Container): Router {
   router.post(
     '/',
     authMiddleware.authenticate,
-    metricsMiddleware(container),
     ValidationMiddleware.validate(createToolsetSchema),
     createToolset(config)
   );
@@ -303,7 +299,6 @@ export function createToolsetsRouter(container: Container): Router {
   router.get(
     '/configured',
     authMiddleware.authenticate,
-    metricsMiddleware(container),
     getConfiguredToolsets(config)
   );
 
@@ -314,7 +309,6 @@ export function createToolsetsRouter(container: Container): Router {
   router.get(
     '/:toolsetId/status',
     authMiddleware.authenticate,
-    metricsMiddleware(container),
     ValidationMiddleware.validate(toolsetIdParamSchema),
     checkToolsetStatus(config)
   );
@@ -326,7 +320,6 @@ export function createToolsetsRouter(container: Container): Router {
   router.get(
     '/:toolsetId/config',
     authMiddleware.authenticate,
-    metricsMiddleware(container),
     ValidationMiddleware.validate(toolsetIdParamSchema),
     getToolsetConfig(config)
   );
@@ -339,7 +332,6 @@ export function createToolsetsRouter(container: Container): Router {
   router.post(
     '/:toolsetId/config',
     authMiddleware.authenticate,
-    metricsMiddleware(container),
     ValidationMiddleware.validate(saveToolsetConfigSchema),
     saveToolsetConfig(config)
   );
@@ -351,7 +343,6 @@ export function createToolsetsRouter(container: Container): Router {
   router.put(
     '/:toolsetId/config',
     authMiddleware.authenticate,
-    metricsMiddleware(container),
     ValidationMiddleware.validate(saveToolsetConfigSchema),
     updateToolsetConfig(config)
   );
@@ -363,7 +354,6 @@ export function createToolsetsRouter(container: Container): Router {
   router.delete(
     '/:toolsetId/config',
     authMiddleware.authenticate,
-    metricsMiddleware(container),
     ValidationMiddleware.validate(toolsetIdParamSchema),
     deleteToolsetConfig(config)
   );
@@ -375,7 +365,6 @@ export function createToolsetsRouter(container: Container): Router {
   router.post(
     '/:toolsetId/reauthenticate',
     authMiddleware.authenticate,
-    metricsMiddleware(container),
     ValidationMiddleware.validate(toolsetIdParamSchema),
     reauthenticateToolset(config)
   );
@@ -391,7 +380,6 @@ export function createToolsetsRouter(container: Container): Router {
   router.get(
     '/:toolsetId/oauth/authorize',
     authMiddleware.authenticate,
-    metricsMiddleware(container),
     ValidationMiddleware.validate(getOAuthAuthorizationUrlSchema),
     getOAuthAuthorizationUrl(config)
   );
@@ -403,7 +391,6 @@ export function createToolsetsRouter(container: Container): Router {
   router.get(
     '/oauth/callback',
     authMiddleware.authenticate,
-    metricsMiddleware(container),
     ValidationMiddleware.validate(handleOAuthCallbackSchema),
     handleOAuthCallback(config)
   );
@@ -419,7 +406,6 @@ export function createToolsetsRouter(container: Container): Router {
   router.get(
     '/my-toolsets',
     authMiddleware.authenticate,
-    metricsMiddleware(container),
     ValidationMiddleware.validate(getMyToolsetsSchema),
     getMyToolsets(config)
   );
@@ -431,7 +417,6 @@ export function createToolsetsRouter(container: Container): Router {
   router.get(
     '/instances',
     authMiddleware.authenticate,
-    metricsMiddleware(container),
     getToolsetInstances(config)
   );
 
@@ -442,7 +427,6 @@ export function createToolsetsRouter(container: Container): Router {
   router.post(
     '/instances',
     authMiddleware.authenticate,
-    metricsMiddleware(container),
     ValidationMiddleware.validate(createToolsetInstanceSchema),
     createToolsetInstance(config)
   );
@@ -454,7 +438,6 @@ export function createToolsetsRouter(container: Container): Router {
   router.get(
     '/instances/:instanceId',
     authMiddleware.authenticate,
-    metricsMiddleware(container),
     getToolsetInstance(config)
   );
 
@@ -465,7 +448,6 @@ export function createToolsetsRouter(container: Container): Router {
   router.put(
     '/instances/:instanceId',
     authMiddleware.authenticate,
-    metricsMiddleware(container),
     updateToolsetInstance(config)
   );
 
@@ -476,7 +458,6 @@ export function createToolsetsRouter(container: Container): Router {
   router.delete(
     '/instances/:instanceId',
     authMiddleware.authenticate,
-    metricsMiddleware(container),
     deleteToolsetInstance(config)
   );
 
@@ -487,7 +468,6 @@ export function createToolsetsRouter(container: Container): Router {
   router.post(
     '/instances/:instanceId/authenticate',
     authMiddleware.authenticate,
-    metricsMiddleware(container),
     authenticateToolsetInstance(config)
   );
 
@@ -499,7 +479,6 @@ export function createToolsetsRouter(container: Container): Router {
   router.put(
     '/instances/:instanceId/credentials',
     authMiddleware.authenticate,
-    metricsMiddleware(container),
     ValidationMiddleware.validate(updateUserToolsetInstanceSchema),
     updateUserToolsetInstance(config) // Reuse the same controller for both create and update of credentials 
   );
@@ -511,7 +490,6 @@ export function createToolsetsRouter(container: Container): Router {
   router.delete(
     '/instances/:instanceId/credentials',
     authMiddleware.authenticate,
-    metricsMiddleware(container),
     removeToolsetCredentials(config)
   );
 
@@ -522,7 +500,6 @@ export function createToolsetsRouter(container: Container): Router {
   router.post(
     '/instances/:instanceId/reauthenticate',
     authMiddleware.authenticate,
-    metricsMiddleware(container),
     reauthenticateToolsetInstance(config)
   );
 
@@ -533,7 +510,6 @@ export function createToolsetsRouter(container: Container): Router {
   router.get(
     '/instances/:instanceId/oauth/authorize',
     authMiddleware.authenticate,
-    metricsMiddleware(container),
     getInstanceOAuthAuthorizationUrl(config)
   );
 
@@ -544,7 +520,6 @@ export function createToolsetsRouter(container: Container): Router {
   router.get(
     '/instances/:instanceId/status',
     authMiddleware.authenticate,
-    metricsMiddleware(container),
     getInstanceStatus(config)
   );
 
@@ -555,7 +530,6 @@ export function createToolsetsRouter(container: Container): Router {
   router.get(
     '/oauth-configs/:toolsetType',
     authMiddleware.authenticate,
-    metricsMiddleware(container),
     listToolsetOAuthConfigs(config)
   );
 
@@ -567,7 +541,6 @@ export function createToolsetsRouter(container: Container): Router {
   router.put(
     '/oauth-configs/:toolsetType/:oauthConfigId',
     authMiddleware.authenticate,
-    metricsMiddleware(container),
     updateToolsetOAuthConfig(config)
   );
 
@@ -578,7 +551,6 @@ export function createToolsetsRouter(container: Container): Router {
   router.delete(
     '/oauth-configs/:toolsetType/:oauthConfigId',
     authMiddleware.authenticate,
-    metricsMiddleware(container),
     deleteToolsetOAuthConfig(config)
   );
 
@@ -594,7 +566,6 @@ export function createToolsetsRouter(container: Container): Router {
   router.get(
     '/agents/:agentKey',
     authMiddleware.authenticate,
-    metricsMiddleware(container),
     ValidationMiddleware.validate(getAgentToolsetsSchema),
     getAgentToolsets(config)
   );
@@ -607,7 +578,6 @@ export function createToolsetsRouter(container: Container): Router {
   router.post(
     '/agents/:agentKey/instances/:instanceId/authenticate',
     authMiddleware.authenticate,
-    metricsMiddleware(container),
     authenticateAgentToolset(config)
   );
 
@@ -618,7 +588,6 @@ export function createToolsetsRouter(container: Container): Router {
   router.put(
     '/agents/:agentKey/instances/:instanceId/credentials',
     authMiddleware.authenticate,
-    metricsMiddleware(container),
     ValidationMiddleware.validate(updateUserToolsetInstanceSchema),
     updateAgentToolsetCredentials(config)
   );
@@ -630,7 +599,6 @@ export function createToolsetsRouter(container: Container): Router {
   router.delete(
     '/agents/:agentKey/instances/:instanceId/credentials',
     authMiddleware.authenticate,
-    metricsMiddleware(container),
     removeAgentToolsetCredentials(config)
   );
 
@@ -641,7 +609,6 @@ export function createToolsetsRouter(container: Container): Router {
   router.post(
     '/agents/:agentKey/instances/:instanceId/reauthenticate',
     authMiddleware.authenticate,
-    metricsMiddleware(container),
     reauthenticateAgentToolset(config)
   );
 
@@ -652,7 +619,6 @@ export function createToolsetsRouter(container: Container): Router {
   router.get(
     '/agents/:agentKey/instances/:instanceId/oauth/authorize',
     authMiddleware.authenticate,
-    metricsMiddleware(container),
     getAgentToolsetOAuthUrl(config)
   );
 

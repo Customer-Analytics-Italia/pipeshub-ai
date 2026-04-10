@@ -35,7 +35,6 @@ export interface AccountSetupParams {
     postCode?: string;
     country?: string;
   };
-  dataCollectionConsent?: boolean;
 }
 
 type ForgotPasswordParams = {

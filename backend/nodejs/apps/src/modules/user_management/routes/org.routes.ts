@@ -7,7 +7,6 @@ import { AuthMiddleware } from '../../../libs/middlewares/auth.middleware';
 import { userAdminCheck } from '../middlewares/userAdminCheck';
 import { AuthenticatedUserRequest } from '../../../libs/middlewares/types';
 import { OrgController } from '../controller/org.controller';
-import { metricsMiddleware } from '../../../libs/middlewares/prometheus.middleware';
 import { attachContainerMiddleware } from '../../auth/middlewares/attachContainer.middleware';
 import { FileProcessorFactory } from '../../../libs/middlewares/file_processor/fp.factory';
 import { FileProcessingType } from '../../../libs/middlewares/file_processor/fp.constant';
@@ -97,7 +96,6 @@ export function createOrgRouter(container: Container) {
     '/',
     authMiddleware.authenticate,
     requireScopes(OAuthScopeNames.ORG_READ),
-    metricsMiddleware(container),
     async (req: Request, res: Response, next: NextFunction) => {
       try {
         const orgController = container.get<OrgController>('OrgController');
@@ -112,7 +110,6 @@ export function createOrgRouter(container: Container) {
     '/',
     authMiddleware.authenticate,
     requireScopes(OAuthScopeNames.ORG_WRITE),
-    metricsMiddleware(container),
     userAdminCheck,
     async (
       req: AuthenticatedUserRequest,
@@ -132,7 +129,6 @@ export function createOrgRouter(container: Container) {
     '/',
     authMiddleware.authenticate,
     requireScopes(OAuthScopeNames.ORG_ADMIN),
-    metricsMiddleware(container),
     userAdminCheck,
     async (
       req: AuthenticatedUserRequest,
@@ -168,7 +164,6 @@ export function createOrgRouter(container: Container) {
       maxFileSize: 1024 * 1024,
       strictFileUpload: true,
     }).getMiddleware,
-    metricsMiddleware(container),
     userAdminCheck,
     async (
       req: AuthenticatedUserRequest,
@@ -187,7 +182,6 @@ export function createOrgRouter(container: Container) {
     '/logo',
     authMiddleware.authenticate,
     requireScopes(OAuthScopeNames.ORG_WRITE),
-    metricsMiddleware(container),
     userAdminCheck,
     async (
       req: AuthenticatedUserRequest,
@@ -206,7 +200,6 @@ export function createOrgRouter(container: Container) {
     '/logo',
     authMiddleware.authenticate,
     requireScopes(OAuthScopeNames.ORG_READ),
-    metricsMiddleware(container),
     async (
       req: AuthenticatedUserRequest,
       res: Response,

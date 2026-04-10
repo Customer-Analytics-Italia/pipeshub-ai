@@ -39,7 +39,6 @@ import { MailServiceContainer } from './modules/mail/container/mailService.conta
 import { createMailServiceRouter } from './modules/mail/routes/mail.routes';
 import { createConnectorRouter } from './modules/tokens_manager/routes/connectors.routes';
 import { createOAuthRouter } from './modules/tokens_manager/routes/oauth.routes';
-import { PrometheusService } from './libs/services/prometheus/prometheus.service';
 import { StorageContainer } from './modules/storage/container/storage.container';
 import { NotificationContainer } from './modules/notification/container/notification.container';
 import {
@@ -178,59 +177,8 @@ export class Application {
       await this.addOAuthServicesToAuthMiddleware();
 
 
-      // binding prometheus to all services routes
-      this.logger.debug('Binding Prometheus Service with other services');
-      this.tokenManagerContainer
-        .bind<PrometheusService>(PrometheusService)
-        .toSelf()
-        .inSingletonScope();
-      this.entityManagerContainer
-        .bind<PrometheusService>(PrometheusService)
-        .toSelf()
-        .inSingletonScope();
-      this.authServiceContainer
-        .bind<PrometheusService>(PrometheusService)
-        .toSelf()
-        .inSingletonScope();
-      this.configurationManagerContainer
-        .bind<PrometheusService>(PrometheusService)
-        .toSelf()
-        .inSingletonScope();
       this.configurationManagerContainer
         .bind<MigrationService>(MigrationService)
-        .toSelf()
-        .inSingletonScope();
-      this.storageServiceContainer
-        .bind<PrometheusService>(PrometheusService)
-        .toSelf()
-        .inSingletonScope();
-      this.esAgentContainer
-        .bind<PrometheusService>(PrometheusService)
-        .toSelf()
-        .inSingletonScope();
-
-      this.knowledgeBaseContainer
-        .bind<PrometheusService>(PrometheusService)
-        .toSelf()
-        .inSingletonScope();
-
-      this.mailServiceContainer
-        .bind<PrometheusService>(PrometheusService)
-        .toSelf()
-        .inSingletonScope();
-
-      this.crawlingManagerContainer
-        .bind<PrometheusService>(PrometheusService)
-        .toSelf()
-        .inSingletonScope();
-
-      this.oauthProviderContainer
-        .bind<PrometheusService>(PrometheusService)
-        .toSelf()
-        .inSingletonScope();
-
-      this.toolsetsContainer
-        .bind<PrometheusService>(PrometheusService)
         .toSelf()
         .inSingletonScope();
 
