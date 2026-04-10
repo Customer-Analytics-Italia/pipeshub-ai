@@ -39,12 +39,16 @@ COPY ./backend/python/pyproject.toml ./
 
 # Install Python dependencies
 RUN uv pip install --system -e . && \
-    # Download ML models
+    # Download lightweight NLP models (small, baked into image)
     python -m spacy download en_core_web_sm && \
     python -c "import nltk; nltk.download('punkt', quiet=True)" && \
-    python -c "from sentence_transformers import CrossEncoder; CrossEncoder(model_name='BAAI/bge-reranker-base')" && \
-    # Clean up caches to save space
-    rm -rf /root/.cache/pip /root/.cache/uv /tmp/*
+    # NOTE: BAAI/bge-reranker-base (~570MB) is downloaded at first startup into a volume.
+    # To pre-bake it instead, uncomment the next line (increases image size significantly):
+    # python -c "from sentence_transformers import CrossEncoder; CrossEncoder(model_name='BAAI/bge-reranker-base')" && \
+    # Clean up caches and __pycache__ to save space
+    rm -rf /root/.cache/pip /root/.cache/uv /tmp/* && \
+    find /usr/local/lib/python3.12 -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true && \
+    find /usr/local/lib/python3.12 -name "*.pyc" -delete 2>/dev/null || true
 
 # -----------------------------------------------------------------------------
 # Stage 3: Node.js Backend Build
@@ -104,9 +108,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     # Basic utilities
     curl \
     ca-certificates \
-    # Network debugging (optional - remove if not needed)
-    iputils-ping \
-    dnsutils \
     # Runtime libraries for RocksDB
     libsnappy1v5 \
     zlib1g \
@@ -159,9 +160,10 @@ WORKDIR /app
 COPY --from=python-deps /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
 COPY --from=python-deps /usr/local/bin /usr/local/bin
 
-# Copy ML model data
-COPY --from=python-deps /root/.cache/huggingface /root/.cache/huggingface
+# Copy NLTK data (small, baked into image)
 COPY --from=python-deps /root/nltk_data /root/nltk_data
+# NOTE: HuggingFace models are downloaded at first startup into /root/.cache/huggingface
+# which is mapped to the pipeshub_model_cache volume in docker-compose.
 
 # Copy Node.js backend (already pruned)
 COPY --from=nodejs-backend /app/backend/dist ./backend/dist

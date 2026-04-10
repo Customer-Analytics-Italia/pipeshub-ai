@@ -149,6 +149,7 @@ services:
     volumes:
       - pipeshub_data:/data/pipeshub
       - pipeshub_root_local:/root/.local
+      - pipeshub_model_cache:/root/.cache/huggingface
     extra_hosts:
       - "host.docker.internal:host-gateway"
     healthcheck:
@@ -331,4 +332,6 @@ volumes:
   pipeshub_data:
     driver: local
   pipeshub_root_local:
+    driver: local
+  pipeshub_model_cache:
     driver: local
