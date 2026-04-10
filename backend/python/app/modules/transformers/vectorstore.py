@@ -1047,6 +1047,33 @@ class VectorStore(Transformer):
                                     },)
                         )
 
+                    # Sliding window over consecutive text blocks (window=3, step=1).
+                    # This keeps short blocks like phone numbers in context with
+                    # their surrounding blocks (office name, hours, etc.) so that
+                    # hybrid retrieval can find them via semantic search.
+                    _WINDOW_SIZE = 3
+                    for _i in range(len(text_blocks)):
+                        _window = text_blocks[_i : _i + _WINDOW_SIZE]
+                        if len(_window) < 2:
+                            continue  # single blocks already embedded above
+                        _merged = "\n".join(
+                            b.data.strip() for b in _window if isinstance(b.data, str) and b.data.strip()
+                        )
+                        if not _merged:
+                            continue
+                        documents_to_embed.append(
+                            Document(
+                                page_content=_merged,
+                                metadata={
+                                    "virtualRecordId": virtual_record_id,
+                                    "blockIndex": _window[0].index,
+                                    "orgId": org_id,
+                                    "isBlock": True,
+                                    "isBlockGroup": False,
+                                },
+                            )
+                        )
+
                     self.logger.info("✅ Added text documents for embedding")
                 except Exception as e:
                     raise DocumentProcessingError(
