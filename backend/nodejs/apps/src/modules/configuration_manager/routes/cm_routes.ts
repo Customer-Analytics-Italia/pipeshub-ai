@@ -751,7 +751,6 @@ export function createConfigurationManagerRouter(container: Container): Router {
     authMiddleware.authenticate,
     requireScopes(OAuthScopeNames.CONFIG_READ),
     userAdminCheck,
-    metricsMiddleware(container),
     getAIModelRegistryCapabilities(appConfig),
   );
 
@@ -760,7 +759,6 @@ export function createConfigurationManagerRouter(container: Container): Router {
     authMiddleware.authenticate,
     requireScopes(OAuthScopeNames.CONFIG_READ),
     userAdminCheck,
-    metricsMiddleware(container),
     getAIModelProviderSchema(appConfig),
   );
 
@@ -769,7 +767,6 @@ export function createConfigurationManagerRouter(container: Container): Router {
     authMiddleware.authenticate,
     requireScopes(OAuthScopeNames.CONFIG_READ),
     userAdminCheck,
-    metricsMiddleware(container),
     getAIModelRegistry(appConfig),
   );
 
@@ -887,7 +884,6 @@ export function createConfigurationManagerRouter(container: Container): Router {
   router.get(
     '/web-search',
     authMiddleware.authenticate,
-    metricsMiddleware(container),
     getWebSearchProviders(keyValueStoreService),
   );
 
@@ -900,7 +896,6 @@ export function createConfigurationManagerRouter(container: Container): Router {
     '/web-search/settings',
     authMiddleware.authenticate,
     userAdminCheck,
-    metricsMiddleware(container),
     ValidationMiddleware.validate(updateWebSearchSettingsSchema),
     updateWebSearchSettings(keyValueStoreService),
   );
@@ -914,7 +909,6 @@ export function createConfigurationManagerRouter(container: Container): Router {
     '/web-search/providers',
     authMiddleware.authenticate,
     userAdminCheck,
-    metricsMiddleware(container),
     ValidationMiddleware.validate(addWebSearchProviderSchema),
     addWebSearchProvider(keyValueStoreService, appConfig),
   );
@@ -929,7 +923,6 @@ export function createConfigurationManagerRouter(container: Container): Router {
     '/web-search/providers/:providerKey',
     authMiddleware.authenticate,
     userAdminCheck,
-    metricsMiddleware(container),
     ValidationMiddleware.validate(updateWebSearchProviderSchema),
     updateWebSearchProvider(keyValueStoreService, appConfig),
   );
@@ -944,7 +937,6 @@ export function createConfigurationManagerRouter(container: Container): Router {
     '/web-search/providers/:providerKey',
     authMiddleware.authenticate,
     userAdminCheck,
-    metricsMiddleware(container),
     ValidationMiddleware.validate(deleteWebSearchProviderSchema),
     deleteWebSearchProvider(keyValueStoreService, appConfig),
   );
@@ -959,7 +951,6 @@ export function createConfigurationManagerRouter(container: Container): Router {
     '/web-search/default/:providerKey',
     authMiddleware.authenticate,
     userAdminCheck,
-    metricsMiddleware(container),
     ValidationMiddleware.validate(updateDefaultWebSearchProviderSchema),
     updateDefaultWebSearchProvider(keyValueStoreService, appConfig),
   );

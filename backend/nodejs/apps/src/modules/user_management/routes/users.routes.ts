@@ -569,27 +569,6 @@ export function createUserRouter(container: Container) {
     },
   );
 
-  router.get(
-    '/:id',
-    authMiddleware.authenticate,
-    requireScopes(OAuthScopeNames.USER_READ),
-    ValidationMiddleware.validate(UserIdValidationSchema),
-    metricsMiddleware(container),
-    userExists,
-    async (
-      req: AuthenticatedUserRequest,
-      res: Response,
-      next: NextFunction,
-    ) => {
-      try {
-        const userController = container.get<UserController>('UserController');
-        await userController.getUserById(req, res, next);
-      } catch (error) {
-        next(error);
-      }
-    },
-  );
-
   router.put(
     '/:id',
     authMiddleware.authenticate,

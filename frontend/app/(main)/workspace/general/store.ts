@@ -17,7 +17,6 @@ export interface GeneralFormData {
   state: string;
   city: string;
   zipCode: string;
-  dataCollection: boolean;
   logoFileName: string | null;
 }
 
@@ -85,7 +84,6 @@ const EMPTY_FORM: GeneralFormData = {
   state: '',
   city: '',
   zipCode: '',
-  dataCollection: false,
   logoFileName: null,
 };
 
@@ -111,7 +109,6 @@ function isFormEqual(a: GeneralFormData, b: GeneralFormData): boolean {
     a.state === b.state &&
     a.city === b.city &&
     a.zipCode === b.zipCode &&
-    a.dataCollection === b.dataCollection &&
     a.logoFileName === b.logoFileName
   );
 }

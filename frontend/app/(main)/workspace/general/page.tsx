@@ -7,7 +7,6 @@ import {
   Flex,
   Text,
   Heading,
-  Switch,
   TextField,
   Avatar,
 } from '@radix-ui/themes';
@@ -21,7 +20,7 @@ import {
 import { useToastStore } from '@/lib/store/toast-store';
 import { useGeneralStore } from './store';
 import type { GeneralFormData } from './store';
-import { OrgApi, MetricsApi } from './api';
+import { OrgApi } from './api';
 import { LottieLoader } from '@/app/components/ui/lottie-loader';
 import { useUserStore, selectIsAdmin, selectIsProfileInitialized } from '@/lib/store/user-store';
 
@@ -109,7 +108,6 @@ export default function GeneralPage() {
 
   // ── Store selectors ────────────────────────────────────────
   const form = useGeneralStore((s) => s.form);
-  const savedForm = useGeneralStore((s) => s.savedForm);
   const errors = useGeneralStore((s) => s.errors);
   const discardDialogOpen = useGeneralStore((s) => s.discardDialogOpen);
   const isLoading = useGeneralStore((s) => s.isLoading);
@@ -138,50 +136,25 @@ export default function GeneralPage() {
     if (!isProfileInitialized) return;
     const fetchOrg = async () => {
       try {
-        if (isAdmin) {
-          const [org, logoObjectUrl, metricsConfig] = await Promise.all([
-            OrgApi.getOrg(),
-            OrgApi.getLogoUrl(),
-            MetricsApi.getMetricsCollection(),
-          ]);
-          const loaded: GeneralFormData = {
-            registeredName: org.registeredName || '',
-            displayName: org.shortName || '',
-            contactEmail: org.contactEmail || '',
-            streetAddress: org.permanentAddress?.addressLine1 || '',
-            country: org.permanentAddress?.country || '',
-            state: org.permanentAddress?.state || '',
-            city: org.permanentAddress?.city || '',
-            zipCode: org.permanentAddress?.postCode || '',
-            dataCollection: metricsConfig.enableMetricCollection === 'true',
-            logoFileName: null,
-          };
-          setForm(loaded);
-          setLogoUrl(logoObjectUrl);
-          savedLogoUrlRef.current = logoObjectUrl;
-          setHasServerLogo(logoObjectUrl !== null);
-        } else {
-          const [org, logoObjectUrl] = await Promise.all([
-            OrgApi.getOrg(),
-            OrgApi.getLogoUrl(),
-          ]);
-          const loaded: GeneralFormData = {
-            registeredName: org.registeredName || '',
-            displayName: org.shortName || '',
-            contactEmail: org.contactEmail || '',
-            streetAddress: org.permanentAddress?.addressLine1 || '',
-            country: org.permanentAddress?.country || '',
-            state: org.permanentAddress?.state || '',
-            city: org.permanentAddress?.city || '',
-            zipCode: org.permanentAddress?.postCode || '',
-            dataCollection: false,
-            logoFileName: null,
-          };
-          setForm(loaded);
-          setLogoUrl(logoObjectUrl);
-          savedLogoUrlRef.current = logoObjectUrl;
-          setHasServerLogo(logoObjectUrl !== null);
-        }
+        const [org, logoObjectUrl] = await Promise.all([
+          OrgApi.getOrg(),
+          OrgApi.getLogoUrl(),
+        ]);
+        const loaded: GeneralFormData = {
+          registeredName: org.registeredName || '',
+          displayName: org.shortName || '',
+          contactEmail: org.contactEmail || '',
+          streetAddress: org.permanentAddress?.addressLine1 || '',
+          country: org.permanentAddress?.country || '',
+          state: org.permanentAddress?.state || '',
+          city: org.permanentAddress?.city || '',
+          zipCode: org.permanentAddress?.postCode || '',
+          logoFileName: null,
+        };
+        setForm(loaded);
+        setLogoUrl(logoObjectUrl);
+        savedLogoUrlRef.current = logoObjectUrl;
+        setHasServerLogo(logoObjectUrl !== null);
       } catch {
         addToast({
           variant: 'error',
@@ -212,7 +185,6 @@ export default function GeneralPage() {
   const handleSave = useCallback(async () => {
     if (!validate()) return;
     try {
-      // 1. Update org details
       await OrgApi.updateOrg({
         registeredName: form.registeredName,
         shortName: form.displayName,
@@ -224,13 +196,7 @@ export default function GeneralPage() {
           city: form.city,
           postCode: form.zipCode,
         },
-        dataCollectionConsent: form.dataCollection,
       });
-
-      // 2. Toggle metrics collection if the value changed
-      if (form.dataCollection !== savedForm.dataCollection) {
-        await MetricsApi.toggleMetricsCollection(form.dataCollection);
-      }
 
       markSaved();
       addToast({
@@ -245,7 +211,7 @@ export default function GeneralPage() {
         description: t('workspace.general.toasts.saveErrorDescription'),
       });
     }
-  }, [form, savedForm, validate, markSaved, addToast]);
+  }, [form, validate, markSaved, addToast]);
 
   const handleDiscard = useCallback(() => {
     setDiscardDialogOpen(true);
@@ -496,60 +462,6 @@ export default function GeneralPage() {
           </SettingsSection>
         </Box>
 
-        {/* ── Data Collection Settings Section ── */}
-        {/* Extra bottom padding so save bar doesn't overlap last section */}
-        <Box style={{ marginBottom: 80 }}>
-          <SettingsSection
-            title={t('workspace.general.dataCollection')}
-            rightAction={
-              <Flex align="center" gap="2">
-                <Switch
-                  checked={form.dataCollection}
-                  onCheckedChange={(checked) => setField('dataCollection', checked)}
-                  size="1"
-                />
-                <Text size="2" style={{ color: 'var(--slate-11)' }}>
-                  {t('workspace.general.enableDataCollection')}
-                </Text>
-              </Flex>
-            }
-          >
-            <Box style={{ padding: 'var(--space-4) var(--space-5)' }}>
-              <Text
-                size="2"
-                style={{ color: 'var(--slate-11)', display: 'block', marginBottom: 'var(--space-3)' }}
-              >
-                {t('workspace.general.dataCollectionDescription')}
-              </Text>
-              <Flex direction="column" gap="2" style={{ paddingLeft: 'var(--space-1)' }}>
-                {[
-                  t('workspace.general.dataCollectionReason1'),
-                  t('workspace.general.dataCollectionReason2'),
-                  t('workspace.general.dataCollectionReason3'),
-                  t('workspace.general.dataCollectionReason4'),
-                  t('workspace.general.dataCollectionReason5'),
-                  t('workspace.general.dataCollectionReason6'),
-                ].map((item) => (
-                  <Flex key={item} align="start" gap="2">
-                    <Box
-                      style={{
-                        width: 'var(--space-1)',
-                        height: 'var(--space-1)',
-                        borderRadius: '50%',
-                        backgroundColor: 'var(--slate-9)',
-                        marginTop: 'var(--space-2)',
-                        flexShrink: 0,
-                      }}
-                    />
-                    <Text size="2" style={{ color: 'var(--slate-11)' }}>
-                      {item}
-                    </Text>
-                  </Flex>
-                ))}
-              </Flex>
-            </Box>
-          </SettingsSection>
-        </Box>
       </Box>
 
       {/* ── Discard Confirmation Dialog ── */}

@@ -382,7 +382,6 @@ export function createConversationalRouter(container: Container): Router {
     '/show/archives/search',
     authMiddleware.authenticate,
     requireScopes(OAuthScopeNames.CONVERSATION_READ),
-    metricsMiddleware(container),
     searchArchivedConversations(appConfig),
   );
 
@@ -511,7 +510,6 @@ export function createAgentConversationalRouter(container: Container): Router {
     '/conversations/show/archives',
     authMiddleware.authenticate,
     requireScopes(OAuthScopeNames.AGENT_READ),
-    metricsMiddleware(container),
     listAllAgentsArchivedConversationsGrouped(appConfig),
   );
 
@@ -574,7 +572,6 @@ export function createAgentConversationalRouter(container: Container): Router {
     '/:agentKey/conversations/:conversationId/message/:messageId/feedback',
     authMiddleware.authenticate,
     requireScopes(OAuthScopeNames.AGENT_EXECUTE),
-    metricsMiddleware(container),
     ValidationMiddleware.validate(updateAgentFeedbackParamsSchema),
     updateAgentFeedback,
   );
@@ -608,7 +605,6 @@ export function createAgentConversationalRouter(container: Container): Router {
     '/:agentKey/conversations/:conversationId/title',
     authMiddleware.authenticate,
     requireScopes(OAuthScopeNames.AGENT_WRITE),
-    metricsMiddleware(container),
     ValidationMiddleware.validate(agentConversationTitleParamsSchema),
     updateAgentConversationTitle,
   );
@@ -621,7 +617,6 @@ export function createAgentConversationalRouter(container: Container): Router {
     '/:agentKey/conversations/:conversationId/archive',
     authMiddleware.authenticate,
     requireScopes(OAuthScopeNames.AGENT_WRITE),
-    metricsMiddleware(container),
     ValidationMiddleware.validate(agentConversationParamsSchema),
     archiveAgentConversation,
   );
@@ -634,7 +629,6 @@ export function createAgentConversationalRouter(container: Container): Router {
     '/:agentKey/conversations/:conversationId/unarchive',
     authMiddleware.authenticate,
     requireScopes(OAuthScopeNames.AGENT_WRITE),
-    metricsMiddleware(container),
     ValidationMiddleware.validate(agentConversationParamsSchema),
     unarchiveAgentConversation,
   );
@@ -647,7 +641,6 @@ export function createAgentConversationalRouter(container: Container): Router {
     '/:agentKey/conversations/show/archives',
     authMiddleware.authenticate,
     requireScopes(OAuthScopeNames.AGENT_READ),
-    metricsMiddleware(container),
     listAllArchivesAgentConversation(),
   );
 
@@ -725,7 +718,6 @@ export function createAgentConversationalRouter(container: Container): Router {
     '/web-search-usage/:provider',
     authMiddleware.authenticate,
     requireScopes(OAuthScopeNames.AGENT_READ),
-    metricsMiddleware(container),
     getWebSearchProviderUsage(appConfig),
   );
 
@@ -798,7 +790,6 @@ export function createChatSpeechRouter(container: Container): Router {
     '/speech/capabilities',
     authMiddleware.authenticate,
     requireScopes(OAuthScopeNames.CONVERSATION_CHAT),
-    metricsMiddleware(container),
     getSpeechCapabilities(appConfig),
   );
 
@@ -806,7 +797,6 @@ export function createChatSpeechRouter(container: Container): Router {
     '/speak',
     authMiddleware.authenticate,
     requireScopes(OAuthScopeNames.CONVERSATION_CHAT),
-    metricsMiddleware(container),
     synthesizeSpeech(appConfig),
   );
 
@@ -814,7 +804,6 @@ export function createChatSpeechRouter(container: Container): Router {
     '/transcribe',
     authMiddleware.authenticate,
     requireScopes(OAuthScopeNames.CONVERSATION_CHAT),
-    metricsMiddleware(container),
     audioUpload.single('file'),
     transcribeAudio(appConfig),
   );
