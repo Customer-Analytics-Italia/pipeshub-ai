@@ -8,6 +8,7 @@ from langchain_core.documents import Document
 from qdrant_client import models
 
 from app.exceptions.fastapi_responses import Status
+from app.modules.retrieval.retrieval_service import ACCESSIBLE_RECORDS_NOT_FOUND_MESSAGE
 
 
 # ---------------------------------------------------------------------------
@@ -406,7 +407,7 @@ class TestExecuteParallelSearches:
     @pytest.mark.asyncio
     async def test_raises_without_sparse_embeddings(self, retrieval_service):
         retrieval_service.get_embedding_model_instance = AsyncMock(return_value=MagicMock())
-        retrieval_service.sparse_embeddings = None
+        retrieval_service._ensure_sparse_embeddings = AsyncMock(return_value=None)
         with pytest.raises(ValueError, match="No sparse embeddings"):
             await retrieval_service._execute_parallel_searches(["q"], MagicMock(), 10)
 
@@ -419,7 +420,9 @@ class TestExecuteParallelSearches:
         sparse_result = MagicMock()
         sparse_result.indices = [1, 2]
         sparse_result.values = [0.5, 0.6]
-        retrieval_service.sparse_embeddings.embed_query = MagicMock(return_value=sparse_result)
+        sparse_mock = MagicMock()
+        sparse_mock.embed_query = MagicMock(return_value=sparse_result)
+        retrieval_service._ensure_sparse_embeddings = AsyncMock(return_value=sparse_mock)
 
         point = MagicMock()
         point.id = "p1"
@@ -446,7 +449,9 @@ class TestExecuteParallelSearches:
         sparse_result = MagicMock()
         sparse_result.indices = [1]
         sparse_result.values = [0.5]
-        retrieval_service.sparse_embeddings.embed_query = MagicMock(return_value=sparse_result)
+        sparse_mock = MagicMock()
+        sparse_mock.embed_query = MagicMock(return_value=sparse_result)
+        retrieval_service._ensure_sparse_embeddings = AsyncMock(return_value=sparse_mock)
 
         point = MagicMock()
         point.id = "same_id"
@@ -533,6 +538,7 @@ class TestSearchWithFilters:
         )
         assert result["status"] == Status.ACCESSIBLE_RECORDS_NOT_FOUND.value
         assert result["status_code"] == 404
+        assert result["message"] == ACCESSIBLE_RECORDS_NOT_FOUND_MESSAGE
 
     @pytest.mark.asyncio
     async def test_returns_empty_when_no_search_results(
@@ -560,6 +566,7 @@ class TestSearchWithFilters:
                 "webUrl": "https://example.com/doc",
                 "mimeType": "application/pdf",
                 "connectorName": "gdrive",
+                "connectorId": "conn-123",
                 "kbId": "kb1",
             }
         ]
@@ -581,6 +588,7 @@ class TestSearchWithFilters:
         assert sr["metadata"]["recordId"] == "rec1"
         assert sr["metadata"]["origin"] == "google_drive"
         assert sr["metadata"]["recordName"] == "Test Doc"
+        assert sr["metadata"]["connectorId"] == "conn-123"
         assert sr["metadata"]["mimeType"] == "application/pdf"
 
     @pytest.mark.asyncio
@@ -645,9 +653,9 @@ class TestSearchWithFilters:
         mock_graph_provider.get_accessible_virtual_record_ids.return_value = {"vr1": "rec1"}
         retrieval_service._execute_parallel_searches = AsyncMock(side_effect=VectorDBEmptyError())
         result = await retrieval_service.search_with_filters(
-            queries=["test"], user_id="u1", org_id="o1", is_agent=True
+            queries=["test"], user_id="u1", org_id="o1"
         )
-        assert result["status"] == Status.EMPTY_RESPONSE.value
+        assert result["status"] == Status.VECTOR_DB_EMPTY.value
 
     @pytest.mark.asyncio
     async def test_vector_db_empty_error_non_agent(self, retrieval_service, mock_graph_provider):
@@ -655,7 +663,7 @@ class TestSearchWithFilters:
         mock_graph_provider.get_accessible_virtual_record_ids.return_value = {"vr1": "rec1"}
         retrieval_service._execute_parallel_searches = AsyncMock(side_effect=VectorDBEmptyError())
         result = await retrieval_service.search_with_filters(
-            queries=["test"], user_id="u1", org_id="o1", is_agent=False
+            queries=["test"], user_id="u1", org_id="o1"
         )
         assert result["status"] == Status.VECTOR_DB_EMPTY.value
 

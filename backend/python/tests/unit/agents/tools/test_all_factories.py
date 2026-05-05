@@ -81,6 +81,20 @@ class TestSlackFactory:
             assert result is not None
 
 
+class TestSalesforceFactory:
+    @pytest.mark.asyncio
+    async def test_create_client(self):
+        from app.agents.tools.factories.salesforce import SalesforceClientFactory
+        factory = SalesforceClientFactory()
+        with patch("app.agents.tools.factories.salesforce.SalesforceClient") as MockClient:
+            MockClient.build_from_toolset = AsyncMock(return_value=MagicMock())
+            result = await factory.create_client(
+                config_service=MagicMock(), logger=MagicMock(),
+                toolset_config={"key": "val"}, state=None
+            )
+            assert result is not None
+
+
 class TestConfluenceFactory:
     @pytest.mark.asyncio
     async def test_create_client(self):
@@ -135,4 +149,34 @@ class TestClickupFactory:
                 config_service=MagicMock(), logger=MagicMock(),
                 toolset_config={"key": "val"}, state=None
             )
+            assert result is not None
+
+class TestMSGraphOneDriveFactory:
+    @pytest.mark.asyncio
+    async def test_create_client(self):
+        from app.agents.tools.factories.microsoft import MSGraphClientFactory
+        factory = MSGraphClientFactory(service_name="one_drive")
+        with patch("app.agents.tools.factories.microsoft.MSGraphClient") as MockClient:
+            MockClient.build_from_toolset = AsyncMock(return_value=MagicMock())
+            result = await factory.create_client(
+                config_service=MagicMock(), logger=MagicMock(),
+                toolset_config={"key": "val"}, state=None
+            )
+            assert result is not None
+
+
+class TestGoogleDriveFactory:
+    @pytest.mark.asyncio
+    async def test_create_client(self):
+        from app.agents.tools.factories.google import GoogleClientFactory
+        factory = GoogleClientFactory(service_name="drive")
+        mock_google_client = MagicMock()
+        mock_google_client.get_client.return_value = MagicMock()
+        with patch("app.agents.tools.factories.google.GoogleClient") as MockClient:
+            MockClient.build_from_toolset = AsyncMock(return_value=mock_google_client)
+            result = await factory.create_client(
+                config_service=MagicMock(), logger=MagicMock(),
+                toolset_config={"key": "val"}, state=None
+            )
+            MockClient.build_from_toolset.assert_awaited_once()
             assert result is not None

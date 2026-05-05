@@ -15,12 +15,13 @@ from app.connectors.core.registry.auth_builder import (
     AuthType,
     OAuthScopeConfig,
 )
+from app.connectors.core.constants import IconPaths
 from app.connectors.core.registry.connector_builder import CommonFields
 from app.connectors.core.registry.tool_builder import (
     ToolsetBuilder,
     ToolsetCategory,
 )
-from app.connectors.core.registry.types import AuthField
+from app.connectors.core.registry.types import AuthField, DocumentationLink
 from app.connectors.sources.atlassian.core.oauth import AtlassianScope
 from app.sources.client.http.exception.exception import HttpStatusCode
 from app.sources.client.http.http_response import HTTPResponse
@@ -174,6 +175,8 @@ class UpdateIssueInput(BaseModel):
     description: Optional[str] = Field(default=None, description="Issue description")
     assignee_account_id: Optional[str] = Field(default=None, description="Assignee account ID")
     assignee_query: Optional[str] = Field(default=None, description="Name or email to resolve assignee")
+    reporter_account_id: Optional[str] = Field(default=None, description="Reporter account ID")
+    reporter_query: Optional[str] = Field(default=None, description="Name or email to resolve reporter")
     priority_name: Optional[str] = Field(default=None, description="Priority")
     labels: list[str] | None = Field(default=None, description="List of labels")
     components: list[str] | None = Field(default=None, description="List of component names")
@@ -203,7 +206,7 @@ class UpdateIssueInput(BaseModel):
                 if 'description' in fields:
                     normalized['description'] = fields['description']
                 # Copy other fields
-                for field in ['assignee_account_id', 'assignee_query', 'priority_name', 'labels', 'components', 'status']:
+                for field in ['assignee_account_id', 'assignee_query', 'reporter_account_id', 'reporter_query', 'priority_name', 'labels', 'components', 'status']:
                     if field in fields:
                         normalized[field] = fields[field]
                 # Remove the fields wrapper after extraction
@@ -222,7 +225,7 @@ class UpdateIssueInput(BaseModel):
                         if 'description' in fields:
                             normalized['description'] = fields['description']
                         # Copy other fields
-                        for field in ['assignee_account_id', 'assignee_query', 'priority_name', 'labels', 'components', 'status']:
+                        for field in ['assignee_account_id', 'assignee_query', 'reporter_account_id', 'reporter_query', 'priority_name', 'labels', 'components', 'status']:
                             if field in fields:
                                 normalized[field] = fields[field]
                 # Extract issue_key from update wrapper if not already set
@@ -297,9 +300,19 @@ class GetCommentsInput(BaseModel):
             ),
             fields=[
                 CommonFields.client_id("Atlassian Developer Console"),
-                CommonFields.client_secret("Atlassian Developer Console")
+                CommonFields.client_secret("Atlassian Developer Console"),
+                AuthField(
+                    name="baseUrl",
+                    display_name="Atlassian site URL",
+                    placeholder="https://yourcompany.atlassian.net",
+                    description="Atlassian site URL the Jira agent should work with.",
+                    field_type="URL",
+                    required=True,
+                    max_length=2000,
+                    is_secret=False,
+                ),
             ],
-            icon_path="/assets/icons/connectors/jira.svg",
+            icon_path=IconPaths.connector_icon("jira"),
             app_group="Project Management",
             app_description="JIRA OAuth application for agent integration"
         ),
@@ -339,7 +352,17 @@ class GetCommentsInput(BaseModel):
             ),
         ])
     ])\
-    .configure(lambda builder: builder.with_icon("/assets/icons/connectors/jira.svg"))\
+    .configure(lambda builder: builder.with_icon(IconPaths.connector_icon("jira"))
+        .add_documentation_link(DocumentationLink(
+            "Jira Cloud API Setup",
+            "https://developer.atlassian.com/cloud/jira/platform/rest/v3/intro/",
+            "setup",
+        ))
+        .add_documentation_link(DocumentationLink(
+            "Pipeshub Documentation",
+            "https://docs.pipeshub.com/toolsets/jira/jira",
+            "pipeshub",
+        )))\
     .build_decorator()
 class Jira:
     """JIRA tool exposed to the agents using JiraDataSource"""
@@ -638,16 +661,35 @@ class Jira:
         try:
             client_obj = self.client._client
 
-            # Browse URLs need the site host from accessible-resources (*.atlassian.net).
+            # OAuth: get_base_url() is the API gateway (api.atlassian.com/ex/jira/{cloud_id}).
+            # Browse URLs need the site host from accessible-resources (*.atlassian.net),
+            # and we must match the cloud_id to the correct site (the token can access many).
             if hasattr(client_obj, 'get_token'):
                 token = client_obj.get_token()
                 if token:
+                    cloud_id = None
+                    if hasattr(client_obj, 'get_base_url'):
+                        gateway = (client_obj.get_base_url() or "").rstrip('/')
+                        match = re.search(r"/ex/jira/([^/]+)", gateway)
+                        if match:
+                            cloud_id = match.group(1)
+
                     resources = await JiraClient.get_accessible_resources(token)
-                    if resources and len(resources) > 0:
-                        # Extract base URL from resource URL
-                        resource_url = resources[0].url
-                        # Resource URL is like 'https://example.atlassian.net'
-                        self._site_url = resource_url.rstrip('/')
+                    if resources:
+                        if cloud_id:
+                            picked = next((r for r in resources if r.id == cloud_id), None)
+                            if picked is None:
+                                logger.warning(
+                                    "Jira _get_site_url: cloud_id %s not found in accessible resources (%s); "
+                                    "refusing to fall back to a different site.",
+                                    cloud_id, [r.id for r in resources],
+                                )
+                                return None
+                            self._site_url = picked.url.rstrip('/')
+                            return self._site_url
+                        # Could not extract cloud_id from the gateway URL — only safe
+                        # when the token has exactly one accessible site.
+                        self._site_url = resources[0].url.rstrip('/')
                         return self._site_url
 
             # API token / basic: configured instance base_url is the site URL
@@ -657,7 +699,7 @@ class Jira:
                     self._site_url = base_url.rstrip('/')
                     return self._site_url
         except Exception as e:
-            logger.warning(f"Could not get site URL: {e}")
+            logger.warning("Could not get site URL: %s", e)
 
         return None
 
@@ -1358,13 +1400,14 @@ class Jira:
     @tool(
         app_name="jira",
         tool_name="update_issue",
-        description="Update an existing JIRA issue. Can update summary, description, assignee, priority, labels, components, and status.",
+        description="Update an existing JIRA issue. Can update summary, description, assignee, reporter, priority, labels, components, and status.",
         args_schema=UpdateIssueInput,  # NEW: Pydantic schema
         returns="Updated issue details",
         when_to_use=[
             "User wants to update/edit a Jira ticket",
             "User mentions 'Jira' + wants to modify issue",
-            "User asks to change issue details/status"
+            "User asks to change issue details/status",
+            "User wants to change the reporter or assignee of an issue"
         ],
         when_not_to_use=[
             "User wants to create issue (use create_issue)",
@@ -1376,7 +1419,9 @@ class Jira:
         typical_queries=[
             "Update Jira ticket PA-123",
             "Change issue status to Done",
-            "Edit Jira issue"
+            "Edit Jira issue",
+            "Make X the reporter of PA-123",
+            "Set reporter to John"
         ],
         category=ToolCategory.PROJECT_MANAGEMENT
     )
@@ -1387,6 +1432,8 @@ class Jira:
         description: Optional[str] = None,
         assignee_account_id: Optional[str] = None,
         assignee_query: Optional[str] = None,
+        reporter_account_id: Optional[str] = None,
+        reporter_query: Optional[str] = None,
         priority_name: str | None = None,
         labels: list[str] | None = None,
         components: list[str] | None = None,
@@ -1429,6 +1476,21 @@ class Jira:
             if assignee_account_id:
                 fields["assignee"] = {"accountId": assignee_account_id}
 
+            # Resolve reporter
+            if reporter_query and not reporter_account_id:
+                issue_response = await self.client.get_issue(issueIdOrKey=issue_key)
+                if issue_response.status == HttpStatusCode.SUCCESS.value:
+                    issue_data = issue_response.json()
+                    project_key = issue_data.get("fields", {}).get("project", {}).get("key")
+                    if project_key:
+                        reporter_account_id = await self._resolve_user_to_account_id(
+                            project_key,
+                            reporter_query
+                        )
+
+            if reporter_account_id:
+                fields["reporter"] = {"accountId": reporter_account_id}
+
             if priority_name:
                 fields["priority"] = {"name": priority_name}
 
@@ -1463,7 +1525,7 @@ class Jira:
             if not fields and not transition:
                 return False, json.dumps({
                     "error": "No updates provided",
-                    "guidance": "Provide at least one field to update (summary, description, assignee, priority, labels, components) or a status to transition to"
+                    "guidance": "Provide at least one field to update (summary, description, assignee, reporter, priority, labels, components) or a status to transition to"
                 })
 
             # Step 1: Update fields (if any) - Jira transitions must be done separately via POST
@@ -1473,6 +1535,23 @@ class Jira:
                     fields=fields,
                     transition=None  # Don't pass transition here - it's ignored by PUT endpoint
                 )
+
+                # Retry without reporter field if Jira rejects it (some instances don't allow reporter changes)
+                if response.status == HttpStatusCode.BAD_REQUEST.value and "reporter" in fields:
+                    try:
+                        error_body = response.json()
+                        errors = error_body.get("errors", {})
+                        if "reporter" in errors:
+                            logger.info("Retrying update without reporter field (not permitted by this Jira instance)")
+                            fields_without_reporter = {k: v for k, v in fields.items() if k != "reporter"}
+                            if fields_without_reporter:
+                                response = await self.client.edit_issue(
+                                    issueIdOrKey=issue_key,
+                                    fields=fields_without_reporter,
+                                    transition=None
+                                )
+                    except Exception:
+                        pass
 
                 if response.status not in [HttpStatusCode.SUCCESS.value, HttpStatusCode.NO_CONTENT.value]:
                     return self._handle_response(

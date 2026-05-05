@@ -15,6 +15,7 @@ from fastapi.responses import StreamingResponse
 
 from app.config.configuration_service import ConfigurationService
 from app.config.constants.arangodb import AppGroups, Connectors, MimeTypes, OriginTypes
+from app.connectors.core.constants import IconPaths
 from app.config.constants.http_status_code import HttpStatusCode
 from app.connectors.core.base.connector.connector_service import BaseConnector
 from app.connectors.core.base.data_processor.data_source_entities_processor import (
@@ -56,12 +57,12 @@ class RSSApp(App):
     .with_categories(["Web", "Content"])
     .with_scopes([ConnectorScope.PERSONAL.value, ConnectorScope.TEAM.value])
     .configure(
-        lambda builder: builder.with_icon("/assets/icons/connectors/rss.svg")
+        lambda builder: builder.with_icon(IconPaths.connector_icon(Connectors.RSS.value))
         .with_realtime_support(False)
         .add_documentation_link(
             DocumentationLink(
                 "RSS Connector Guide",
-                "https://docs.pipeshub.ai/connectors/rss",
+                "https://docs.pipeshub.com/connectors/overview",
                 "setup",
             )
         )

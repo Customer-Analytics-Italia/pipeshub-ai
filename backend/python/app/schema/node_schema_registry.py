@@ -12,7 +12,6 @@ The adaptation process:
 """
 
 import copy
-from typing import Optional
 
 from app.config.constants.arangodb import CollectionNames
 from app.schema.arango.documents import (
@@ -20,6 +19,7 @@ from app.schema.arango.documents import (
     agent_template_schema,
     app_role_schema,
     app_schema,
+    artifact_record_schema,
     comment_record_schema,
     department_schema,
     file_record_schema,
@@ -38,7 +38,7 @@ from app.schema.arango.documents import (
 )
 
 
-def adapt_schema(arango_schema: Optional[dict]) -> Optional[dict]:
+def adapt_schema(arango_schema: dict | None) -> dict | None:
     """
     Adapt an ArangoDB schema for use with jsonschema library.
 
@@ -71,7 +71,7 @@ def adapt_schema(arango_schema: Optional[dict]) -> Optional[dict]:
 
 # Build the node schema registry mapping collection names to adapted schemas
 # This mirrors the NODE_COLLECTIONS list from base_arango_service.py (lines 89-123)
-NODE_SCHEMA_REGISTRY: dict[str, Optional[dict]] = {
+NODE_SCHEMA_REGISTRY: dict[str, dict | None] = {
     CollectionNames.RECORDS.value: adapt_schema(record_schema),
     CollectionNames.DRIVES.value: None,  # No schema
     CollectionNames.FILES.value: adapt_schema(file_record_schema),
@@ -105,10 +105,11 @@ NODE_SCHEMA_REGISTRY: dict[str, Optional[dict]] = {
     CollectionNames.SYNC_POINTS.value: None,  # No schema
     CollectionNames.TEAMS.value: adapt_schema(team_schema),
     CollectionNames.VIRTUAL_RECORD_TO_DOC_ID_MAPPING.value: None,  # No schema
+    CollectionNames.ARTIFACTS.value: adapt_schema(artifact_record_schema),
 }
 
 
-def get_node_schema(collection: str) -> Optional[dict]:
+def get_node_schema(collection: str) -> dict | None:
     """
     Get the adapted JSON Schema for a collection.
 

@@ -17,6 +17,7 @@ class ToolCategory(Enum):
     CALENDAR = "calendar"
     FILE_STORAGE = "file_storage"
     CODE_MANAGEMENT = "code_management"
+    CODE_EXECUTION = "code_execution"
     UTILITY = "utility"
     SEARCH = "search"
     KNOWLEDGE = "knowledge"
@@ -105,6 +106,16 @@ class ToolDiscoveryConfig:
         "knowledge_hub": AppConfiguration(
             app_name="knowledge_hub",
         ),
+        # Sandbox toolsets (code execution, database)
+        "coding_sandbox": AppConfiguration(
+            app_name="coding_sandbox",
+        ),
+        "database_sandbox": AppConfiguration(
+            app_name="database_sandbox",
+        ),
+        "image_generator": AppConfiguration(
+            app_name="image_generator",
+        ),
         "google": AppConfiguration(
             app_name="google",
             subdirectories=["gmail", "calendar", "drive", "meet"],
@@ -185,6 +196,14 @@ class ToolDiscoveryConfig:
             app_name="github",
             client_builder="GitHubClient",
         ),
+        "lumos": AppConfiguration(
+            app_name="lumos",
+            client_builder="LumosClient",
+        ),
+        # "github": AppConfiguration(
+        #     app_name="github",
+        #     client_builder="GitHubClient",
+        # ),
         # "gitlab": AppConfiguration(
         #     app_name="gitlab",
         #     client_builder="GitLabClient",
@@ -209,6 +228,10 @@ class ToolDiscoveryConfig:
             app_name="zoom",
             client_builder="ZoomClient",
         ),
+        "salesforce": AppConfiguration(
+            app_name="salesforce",
+            client_builder="SalesforceClient",
+        ),
 
     }
 
@@ -218,6 +241,7 @@ class ToolDiscoveryConfig:
         "web_search",
         "get_current_datetime",
         "retrieval.search_internal_knowledge",
+        "image_generator.",
     }
 
     # Files to skip during discovery

@@ -15,11 +15,13 @@ from app.connectors.core.registry.auth_builder import (
     AuthType,
     OAuthScopeConfig,
 )
+from app.connectors.core.constants import IconPaths
 from app.connectors.core.registry.connector_builder import CommonFields
 from app.connectors.core.registry.tool_builder import (
     ToolsetBuilder,
     ToolsetCategory,
 )
+from app.connectors.core.registry.types import DocumentationLink
 from app.sources.client.http.http_request import HTTPRequest
 from app.sources.client.zoom.zoom import ZoomClient, ZoomResponse
 from app.sources.external.zoom.zoom import ZoomDataSource
@@ -216,12 +218,22 @@ _STRIP_FIELDS = {"global_dial_in_numbers", "global_dial_in_countries", "dial_in_
                 CommonFields.client_id("Zoom Marketplace App"),
                 CommonFields.client_secret("Zoom Marketplace App"),
             ],
-            icon_path="/assets/icons/connectors/zoom.svg",
+            icon_path=IconPaths.connector_icon("zoom"),
             app_group="Video & Meetings",
             app_description="Zoom OAuth application for agent integration",
         ),
     ])\
-    .configure(lambda builder: builder.with_icon("/assets/icons/connectors/zoom.svg"))\
+    .configure(lambda builder: builder.with_icon(IconPaths.connector_icon("zoom"))
+        .add_documentation_link(DocumentationLink(
+            "Zoom OAuth App",
+            "https://developers.zoom.us/docs/integrations/create/",
+            "setup",
+        ))
+        .add_documentation_link(DocumentationLink(
+            "Pipeshub Documentation",
+            "https://docs.pipeshub.com/toolsets/zoom/zoom",
+            "pipeshub",
+        )))\
     .build_decorator()
 class Zoom:
     """Zoom tools exposed to agents using ZoomDataSource."""

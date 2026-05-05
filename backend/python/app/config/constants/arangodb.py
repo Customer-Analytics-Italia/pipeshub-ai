@@ -67,9 +67,18 @@ class Connectors(Enum):
     ZAMMAD = "ZAMMAD"
     ZOOM = "ZOOM"
 
+    GITLAB = "GITLAB"
+    SNOWFLAKE = "SNOWFLAKE"
+    POSTGRESQL = "POSTGRESQL"
+    MARIADB = "MARIADB"
+
     UNKNOWN = "UNKNOWN"
 
     RSS = "RSS"
+
+    CODING_SANDBOX = "CODING_SANDBOX"
+    DATABASE_SANDBOX = "DATABASE_SANDBOX"
+    IMAGE_GENERATION = "IMAGE_GENERATION"
 
 
 class AppGroups(Enum):
@@ -84,7 +93,7 @@ class AppGroups(Enum):
     NEXTCLOUD = "Nextcloud"
     WEB = "Web"
     BOOKSTACK = "BookStack"
-    GITHUB  = "Github"
+    GITHUB = "Github"
     S3 = "S3"
     MINIO = "MinIO"
     GOOGLE_CLOUD = "Google Cloud"
@@ -94,11 +103,16 @@ class AppGroups(Enum):
     ZOOM = "Zoom"
     LOCAL_STORAGE = "Local Storage"
     RSS = "RSS"
+    GITLAB = "GitLab"
 
+    SNOWFLAKE = "Snowflake"
+    POSTGRESQL = "PostgreSQL"
+    MARIADB = "MariaDB"
 
 class OriginTypes(Enum):
     CONNECTOR = "CONNECTOR"
     UPLOAD = "UPLOAD"
+
 
 class LegacyCollectionNames(Enum):
     KNOWLEDGE_BASE = "knowledgeBase"
@@ -108,11 +122,14 @@ class LegacyCollectionNames(Enum):
     PERMISSIONS = "permissions"
     PERMISSIONS_TO_KB = "permissionsToKB"
 
+
 class LegacyGraphNames(Enum):
     FILE_ACCESS_GRAPH = "fileAccessGraph"
 
+
 class GraphNames(Enum):
     KNOWLEDGE_GRAPH = "knowledgeGraph"
+
 
 class CollectionNames(Enum):
     # Records and Record relations
@@ -134,7 +151,7 @@ class CollectionNames(Enum):
     FILES = "files"
     LINKS = "links"
     MAILS = "mails"
-    #MESSAGES = "messages"
+    # MESSAGES = "messages"
     WEBPAGES = "webpages"
     COMMENTS = "comments"
     TICKETS = "tickets"
@@ -144,6 +161,10 @@ class CollectionNames(Enum):
     MEETINGS = "meetings"
     PRODUCTS = "products"
     DEALS = "deals"
+    ARTIFACTS = "artifacts"
+    CODE_FILES = "codeFiles"
+    SQL_TABLES = "sqlTables"
+    SQL_VIEWS = "sqlViews"
 
     # Users and groups
     PEOPLE = "people"
@@ -171,7 +192,6 @@ class CollectionNames(Enum):
     SUBCATEGORIES3 = "subcategories3"
     INTER_CATEGORY_RELATIONS = "interCategoryRelations"
 
-
     # Other
     CHANNEL_HISTORY = "channelHistory"
     PAGE_TOKENS = "pageTokens"
@@ -180,11 +200,11 @@ class CollectionNames(Enum):
     ORG_APP_RELATION = "orgAppRelation"
     USER_APP_RELATION = "userAppRelation"
     ORG_DEPARTMENT_RELATION = "orgDepartmentRelation"
-    PROSPECT = "prospect"              # Org -> Org: prospect/account relationship
-    CUSTOMER = "customer"              # Org -> Org: customer relationship
-    LEAD = "lead"                      # Org -> Person: lead (until converted to contact)
-    CONTACT = "contact"                # Org -> Person: contact relationship
-    DEAL_INFO = "dealInfo"             # Org -> Deal: opportunity/deal relationship
+    PROSPECT = "prospect"  # Org -> Org: prospect/account relationship
+    CUSTOMER = "customer"  # Org -> Org: customer relationship
+    LEAD = "lead"  # Org -> Person: lead (until converted to contact)
+    CONTACT = "contact"  # Org -> Person: contact relationship
+    DEAL_INFO = "dealInfo"  # Org -> Deal: opportunity/deal relationship
     DEAL_OF = "dealOf"  # Deal -> Org: deal belongs to organization
     SOLD_IN = "soldIn"  # Product -> Deal: lineItems [{quantity, unitPrice}, ...] per product–deal
     MEMBER_OF = "memberOf"  # Person -> Org: membership with Title, Department
@@ -195,7 +215,7 @@ class CollectionNames(Enum):
     # WEBPAGE_COMMENT_RECORD="webpageCommentRecord"
 
     # NOTION_DATABASE_RECORD="notionDatabaseRecord"
-    BELONGS_TO_RECORD_GROUP="belongsToRecordGroup"
+    BELONGS_TO_RECORD_GROUP = "belongsToRecordGroup"
 
     # Storage mappings
     VIRTUAL_RECORD_TO_DOC_ID_MAPPING = "virtualRecordToDocIdMapping"
@@ -239,6 +259,10 @@ class ExtensionTypes(Enum):
     SVG = "svg"
     HEIC = "heic"
     HEIF = "heif"
+    SQL_TABLE = "sql_table"  
+    SQL_VIEW = "sql_view"    
+
+
 
 class MimeTypes(Enum):
     PDF = "application/pdf"
@@ -278,6 +302,34 @@ class MimeTypes(Enum):
     HEIF = "image/heif"
     ZIP = "application/zip"
     GIF = "image/gif"
+    SQL_TABLE = "application/vnd.sql.table"  
+    SQL_VIEW = "application/vnd.sql.view"  
+
+RECONCILIATION_ENABLED_MIME_TYPES = {
+    MimeTypes.SQL_TABLE.value,
+    MimeTypes.SQL_VIEW.value,
+    MimeTypes.GOOGLE_DOCS.value,
+    MimeTypes.GOOGLE_SHEETS.value,
+    MimeTypes.GOOGLE_SLIDES.value,
+    MimeTypes.PDF.value,
+    MimeTypes.DOCX.value,
+    MimeTypes.DOC.value,
+    MimeTypes.PLAIN_TEXT.value,
+    MimeTypes.HTML.value,
+}
+
+RECONCILIATION_ENABLED_EXTENSIONS = {
+    ExtensionTypes.SQL_TABLE.value,
+    ExtensionTypes.SQL_VIEW.value,
+    ExtensionTypes.PDF.value,
+    ExtensionTypes.DOCX.value,
+    ExtensionTypes.DOC.value,
+    ExtensionTypes.TXT.value,
+    ExtensionTypes.MD.value,
+    ExtensionTypes.MDX.value,
+    ExtensionTypes.HTML.value
+}
+
 
 class ProgressStatus(Enum):
     NOT_STARTED = "NOT_STARTED"
@@ -314,6 +366,9 @@ class RecordTypes(Enum):
     MEETING = "MEETING"
     CASE = "CASE"
     TASK = "TASK"
+    ARTIFACT = "ARTIFACT"
+    CODE_FILE = "CODE_FILE"
+
 
 class RecordRelations(Enum):
     PARENT_CHILD = "PARENT_CHILD"
@@ -329,15 +384,18 @@ class RecordRelations(Enum):
     REVIEWS = "REVIEWS"
     CAUSES = "CAUSES"
     RELATED = "RELATED"
+    FOREIGN_KEY = "FOREIGN_KEY"
 
 
 class EntityRelations(Enum):
     """Standard edge types for entity relationships"""
+
     ASSIGNED_TO = "ASSIGNED_TO"
     REPORTED_BY = "REPORTED_BY"
     CREATED_BY = "CREATED_BY"
     LEAD_BY = "LEAD_BY"
     RELATED_TO_PERSON = "RELATED_TO_PERSON"
+
 
 class EventTypes(Enum):
     NEW_RECORD = "newRecord"
@@ -347,20 +405,24 @@ class EventTypes(Enum):
     REINDEX_FAILED = "reindexFailed"
     BULK_DELETE_RECORDS = "bulkDeleteRecords"
 
+
 class AccountType(Enum):
     INDIVIDUAL = "individual"
     ENTERPRISE = "enterprise"
     BUSINESS = "business"
     ADMIN = "admin"
 
+
 class ConnectorScopes(Enum):
     PERSONAL = "personal"
     TEAM = "team"
+
 
 class AppStatus(Enum):
     IDLE = "IDLE"
     FULL_SYNCING = "FULL_SYNCING"
     SYNCING = "SYNCING"
+
 
 RECORD_TYPE_COLLECTION_MAPPING = {
     "FILE": CollectionNames.FILES.value,
@@ -381,7 +443,11 @@ RECORD_TYPE_COLLECTION_MAPPING = {
     "DEAL": CollectionNames.DEALS.value,
     "DATABASE": CollectionNames.WEBPAGES.value,
     "DATASOURCE": CollectionNames.WEBPAGES.value,
-    "PULL_REQUEST": CollectionNames.PULLREQUESTS.value,
     "MEETING": CollectionNames.MEETINGS.value,
+    "ARTIFACT": CollectionNames.ARTIFACTS.value,
+    "CODE_FILE": CollectionNames.CODE_FILES.value,
+    "PULL_REQUEST":CollectionNames.PULLREQUESTS.value,
+    "SQL_TABLE": CollectionNames.SQL_TABLES.value,
+    "SQL_VIEW": CollectionNames.SQL_VIEWS.value,
     # Note: MESSAGE, DRIVE, SHAREPOINT_*, and other types are stored only in records collection
 }

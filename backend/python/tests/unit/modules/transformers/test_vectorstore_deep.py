@@ -875,10 +875,10 @@ class TestDeleteEmbeddings:
     async def test_success(self):
         vs = _make_vectorstore()
         vs.vector_db_service.filter_collection = AsyncMock(return_value={"filter": {}})
-        vs.vector_db_service.delete_points = MagicMock()
+        vs.vector_db_service.delete_points = AsyncMock()
         await vs.delete_embeddings("vr-1")
         vs.vector_db_service.filter_collection.assert_awaited_once()
-        vs.vector_db_service.delete_points.assert_called_once()
+        vs.vector_db_service.delete_points.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_failure_raises(self):
@@ -898,16 +898,16 @@ class TestStoreImagePoints:
     async def test_with_points(self):
         vs = _make_vectorstore()
         mock_point = MagicMock()
-        vs.vector_db_service.upsert_points = MagicMock()
+        vs.vector_db_service.upsert_points = AsyncMock()
         await vs._store_image_points([mock_point])
-        vs.vector_db_service.upsert_points.assert_called_once()
+        vs.vector_db_service.upsert_points.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_with_empty_points(self):
         vs = _make_vectorstore()
-        vs.vector_db_service.upsert_points = MagicMock()
+        vs.vector_db_service.upsert_points = AsyncMock()
         await vs._store_image_points([])
-        vs.vector_db_service.upsert_points.assert_not_called()
+        vs.vector_db_service.upsert_points.assert_not_awaited()
 
 
 # ===================================================================
@@ -1533,7 +1533,8 @@ class TestIndexDocumentsExceptions:
 
     @pytest.mark.asyncio
     async def test_embedding_creation_exception_wraps(self):
-        """Exception during _create_embeddings should raise EmbeddingError."""
+        """Unknown exception during _create_embeddings is wrapped in IndexingError by index_documents."""
+        from app.exceptions.indexing_exceptions import IndexingError
         from app.models.blocks import Block, BlocksContainer, BlockType, DataFormat
 
         vs = _make_vectorstore()
@@ -1555,7 +1556,7 @@ class TestIndexDocumentsExceptions:
             "app.modules.transformers.vectorstore.get_llm",
             return_value=(MagicMock(), {"isMultimodal": False}),
         ):
-            with pytest.raises(EmbeddingError, match="Failed to create or store embeddings"):
+            with pytest.raises(IndexingError, match="Unexpected error during indexing"):
                 await vs.index_documents(
                     BlocksContainer(blocks=[text_block], block_groups=[]),
                     "org-1", "rec-1", "vr-1", "text/plain",

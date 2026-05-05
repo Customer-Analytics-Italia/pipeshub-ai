@@ -24,7 +24,7 @@ import {
   AuthenticatedUserRequest,
   AuthenticatedServiceRequest,
 } from '../../../libs/middlewares/types';
-import { UserCredentials } from '../schema/userCredentials.schema';
+import { IUserCredentials, UserCredentials } from '../schema/userCredentials.schema';
 
 import { AuthSessionRequest } from '../middlewares/types';
 
@@ -70,6 +70,7 @@ const {
   PASSWORD_CHANGED,
 } = userActivitiesType;
 export const SALT_ROUNDS = 10;
+const BLOCK_COOLDOWN_DURATION_MS = 24 * 60 * 60 * 1000;
 
 @injectable()
 export class UserAccountController {
@@ -136,6 +137,41 @@ export class UserAccountController {
     return { otp, hashedOTP };
   }
 
+  private getBlockedUntilIso(userCredentials: IUserCredentials): string | undefined {
+    const blockExpiresAt = userCredentials.blockExpiresAt;
+    if (!blockExpiresAt) {
+      return undefined;
+    }
+
+    const blockedUntilDate = blockExpiresAt;
+    if (Number.isNaN(blockedUntilDate.getTime())) {
+      return undefined;
+    }
+
+    return blockedUntilDate.toISOString();
+  }
+
+  private async ensureBlockStatus(
+    userCredentials: IUserCredentials,
+  ): Promise<boolean> {
+    if (!userCredentials.isBlocked) {
+      return false;
+    }
+
+    const now = Date.now();
+    const blockExpiresAtTime = userCredentials.blockExpiresAt?.getTime() ?? null;
+
+    if (blockExpiresAtTime && blockExpiresAtTime <= now) {
+      userCredentials.isBlocked = false;
+      userCredentials.wrongCredentialCount = 0;
+      userCredentials.blockExpiresAt = null;
+      await userCredentials.save();
+      return false;
+    }
+
+    return true;
+  }
+
   async verifyOTP(
     userId: string,
     orgId: string,
@@ -151,9 +187,12 @@ export class UserAccountController {
     if (!userCredentials) {
       throw new BadRequestError('Please request OTP before login');
     }
-    if (userCredentials.isBlocked) {
+    if (await this.ensureBlockStatus(userCredentials)) {
+      const blockedUntil = this.getBlockedUntilIso(userCredentials);
       throw new BadRequestError(
-        'Your account has been disabled as you have entered incorrect OTP/Password too many times. Please reach out to your admin or reachout to contact@pipeshub.com',
+        blockedUntil
+          ? `Your account has been disabled as you have entered incorrect OTP/Password too many times. [blockedUntil:${blockedUntil}]`
+          : 'Your account has been disabled as you have entered incorrect OTP/Password too many times.',
       );
     }
     if (!userCredentials.otpValidity || !userCredentials.hashedOTP) {
@@ -184,9 +223,11 @@ export class UserAccountController {
       if (userCredentials.wrongCredentialCount >= 5) {
         this.logger.warn('blocked', email);
         userCredentials.isBlocked = true;
+        userCredentials.blockExpiresAt = new Date(Date.now() + BLOCK_COOLDOWN_DURATION_MS);
         await userCredentials.save();
 
         const org = await Org.findOne({ _id: orgId, isDeleted: false });
+        const user = await Users.findOne({ _id: userId, orgId, isDeleted: false });
 
         await this.mailService.sendMail({
           emailTemplateType: 'suspiciousLoginAttempt',
@@ -196,8 +237,8 @@ export class UserAccountController {
           usersMails: [email],
           subject: 'Alert : Suspicious Login Attempt Detected',
           templateData: {
-            link: this.config.frontendUrl,
             orgName: org?.shortName || org?.registeredName,
+            name: user?.fullName,
           },
         });
         throw new UnauthorizedError(
@@ -415,9 +456,12 @@ export class UserAccountController {
         isDeleted: false,
       });
 
-      if (userCredentialData?.isBlocked) {
+      if (userCredentialData && (await this.ensureBlockStatus(userCredentialData))) {
+        const blockedUntil = this.getBlockedUntilIso(userCredentialData);
         throw new BadRequestError(
-          'You cannot change you password as your account is blocked due to multiple incorrect logins',
+          blockedUntil
+            ? `You cannot change you password as your account is blocked due to multiple incorrect logins [blockedUntil:${blockedUntil}]`
+            : 'You cannot change you password as your account is blocked due to multiple incorrect logins',
         );
       }
       if (!userCredentialData) {
@@ -462,15 +506,21 @@ export class UserAccountController {
     res: Response,
     next: NextFunction,
   ): Promise<void> => {
+    // Always responds 200 with the same generic message regardless of whether
+    // the email is registered, so the response cannot be used to enumerate
+    // accounts. Validation and CAPTCHA failures still surface as errors.
+    const genericResponse = {
+      data: 'If an account exists for this email, a password reset link has been sent.',
+    };
+
     try {
       const { email, 'cf-turnstile-response': turnstileToken } = req.body;
       if (!email) {
         throw new BadRequestError('Email is required');
       }
 
-      // Verify Turnstile token
       const turnstileSecretKey = process.env.TURNSTILE_SECRET_KEY;
-      if (turnstileSecretKey) { // Only verify if secret key is configured
+      if (turnstileSecretKey) {
         const isValid = await verifyTurnstileToken(
           turnstileToken,
           turnstileSecretKey,
@@ -482,19 +532,23 @@ export class UserAccountController {
         }
       }
 
-      const authToken = iamJwtGenerator(email, this.config.scopedJwtSecret);
-      const user = await this.iamService.getUserByEmail(email, authToken);
+      try {
+        const authToken = iamJwtGenerator(email, this.config.scopedJwtSecret);
+        const user = await this.iamService.getUserByEmail(email, authToken);
 
-      if (user.statusCode !== 200) {
-        throw new BadRequestError(user.data);
+        if (user.statusCode === 200 && user.data) {
+          await this.sendForgotPasswordEmail(user.data);
+        }
+      } catch (lookupOrSendError) {
+        this.logger.warn('forgotPasswordEmail: suppressing internal error', {
+          error:
+            lookupOrSendError instanceof Error
+              ? lookupOrSendError.message
+              : lookupOrSendError,
+        });
       }
-      this.logger.debug('user', user);
 
-      const result = await this.sendForgotPasswordEmail(user.data);
-      if (result.statusCode !== 200) {
-        throw new BadRequestError(result.data!);
-      }
-      res.status(200).send({ data: 'password reset mail sent' });
+      res.status(200).send(genericResponse);
       return;
     } catch (error) {
       next(error);
@@ -793,9 +847,12 @@ export class UserAccountController {
     });
     const org = await Org.findOne({ _id: orgId, isDeleted: false });
 
-    if (userCredentialData?.isBlocked) {
+    if (userCredentialData && (await this.ensureBlockStatus(userCredentialData))) {
+      const blockedUntil = this.getBlockedUntilIso(userCredentialData);
       throw new ForbiddenError(
-        'OTP not sent. You have entered incorrect OTP/Password too many times. Your account has been disabled. Please reach out to your admin or reachout to contact@pipeshub.com to get it restored.',
+        blockedUntil
+          ? `OTP not sent. You have entered incorrect OTP/Password too many times. Your account has been disabled. [blockedUntil:${blockedUntil}]`
+          : 'OTP not sent. You have entered incorrect OTP/Password too many times. Your account has been disabled.',
       );
     }
 
@@ -924,9 +981,12 @@ export class UserAccountController {
         throw new NotFoundError('User credentials not found');
       }
 
-      if (userCredential.isBlocked) {
+      if (await this.ensureBlockStatus(userCredential as IUserCredentials)) {
+        const blockedUntil = this.getBlockedUntilIso(userCredential as IUserCredentials);
         throw new BadRequestError(
-          'Your account has been disabled. If it is a mistake, Please reach out to contact@pipeshub.com to get it restored.',
+          blockedUntil
+            ? `Your account has been disabled. If it is a mistake, Please reach out to contact@pipeshub.com to get it restored. [blockedUntil:${blockedUntil}]`
+            : 'Your account has been disabled. If it is a mistake, Please reach out to contact@pipeshub.com to get it restored.',
         );
       }
 
@@ -979,13 +1039,19 @@ export class UserAccountController {
     });
 
     if (!userCredentials?.hashedPassword) {
-      throw new NotFoundError(
-        'You have not created a password yet. Please create a new password by using forgot password',
-      );
+      // Do not reveal that no password has been set for this account —
+      // that would let an attacker enumerate valid email addresses by
+      // comparing the response to a wrong-password attempt. Return the
+      // same BadRequestError as an incorrect password so the client sees
+      // an identical response in both cases.
+      throw new BadRequestError('Incorrect password, please try again.');
     }
-    if (userCredentials.isBlocked) {
+    if (await this.ensureBlockStatus(userCredentials)) {
+      const blockedUntil = this.getBlockedUntilIso(userCredentials);
       throw new BadRequestError(
-        'Your account has been disabled as you have entered incorrect OTP/Password too many times. Please reach out to us to get it restored.',
+        blockedUntil
+          ? `Your account has been disabled as you have entered incorrect OTP/Password too many times. [blockedUntil:${blockedUntil}]`
+          : 'Your account has been disabled as you have entered incorrect OTP/Password too many times.',
       );
     }
 
@@ -1007,6 +1073,7 @@ export class UserAccountController {
       });
       if (userCredentials.wrongCredentialCount >= 5) {
         userCredentials.isBlocked = true;
+        userCredentials.blockExpiresAt = new Date(Date.now() + BLOCK_COOLDOWN_DURATION_MS);
         await userCredentials.save();
 
         await this.mailService.sendMail({
@@ -1017,8 +1084,8 @@ export class UserAccountController {
           usersMails: [email],
           subject: 'Alert : Suspicious Login Attempt Detected',
           templateData: {
-            link: this.config.frontendUrl,
             orgName: org?.shortName || org?.registeredName,
+            name: user.fullName,
           },
         });
       }

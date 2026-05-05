@@ -34,6 +34,7 @@ from app.modules.agents.deep.prompts import SUB_AGENT_SYSTEM_PROMPT
 from app.modules.agents.deep.state import DeepAgentState, SubAgentTask, _opik_tracer
 from app.modules.agents.deep.tool_router import get_tools_for_sub_agent
 from app.modules.agents.qna.stream_utils import safe_stream_write, send_keepalive
+from app.utils.time_conversion import build_llm_time_context
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Coroutine
@@ -362,13 +363,10 @@ async def _execute_simple_sub_agent(
         tool_guidance = _build_sub_agent_tool_guidance(task, state)
 
         # Build time context
-        time_ctx = ""
-        current_time = state.get("current_time")
-        timezone = state.get("timezone")
-        if current_time:
-            time_ctx += f"Current time: {current_time}"
-        if timezone:
-            time_ctx += f"\nTimezone: {timezone}"
+        time_ctx = build_llm_time_context(
+            current_time=state.get("current_time"),
+            time_zone=state.get("timezone"),
+        )
 
         # Build agent instructions prefix
         agent_instructions = _build_sub_agent_instructions(state)
@@ -376,6 +374,7 @@ async def _execute_simple_sub_agent(
         # Build system prompt
         system_prompt = SUB_AGENT_SYSTEM_PROMPT.format(
             task_description=task_desc,
+            task_scope_block=_format_task_scope_block(task),
             task_context=context_text,
             tool_schemas=tool_schemas_text or "No tool schemas available.",
             tool_guidance=tool_guidance,
@@ -418,6 +417,8 @@ async def _execute_simple_sub_agent(
             "recursion_limit": MAX_SUB_AGENT_RECURSION,
             "callbacks": callbacks,
         }
+
+        _rebind_tool_state(tools, state)
 
         # Execute — no wall-clock timeout for deep agent; tool call budget
         # (_ToolCallBudget) stops the agent after _MAX_TOOL_CALLS_PER_AGENT calls.
@@ -544,13 +545,10 @@ async def _execute_complex_sub_agent(
     tool_guidance = _build_sub_agent_tool_guidance(task, state)
 
     # Build time context
-    time_ctx = ""
-    current_time = state.get("current_time")
-    timezone = state.get("timezone")
-    if current_time:
-        time_ctx += f"Current time: {current_time}"
-    if timezone:
-        time_ctx += f"\nTimezone: {timezone}"
+    time_ctx = build_llm_time_context(
+        current_time=state.get("current_time"),
+        time_zone=state.get("timezone"),
+    )
 
     agent_instructions = _build_sub_agent_instructions(state)
 
@@ -570,6 +568,7 @@ async def _execute_complex_sub_agent(
 
     system_prompt = SUB_AGENT_SYSTEM_PROMPT.format(
         task_description=augmented_desc,
+        task_scope_block=_format_task_scope_block(task),
         task_context=context_text,
         tool_schemas=tool_schemas_text or "No tool schemas available.",
         tool_guidance=tool_guidance,
@@ -608,6 +607,8 @@ async def _execute_complex_sub_agent(
         "recursion_limit": MAX_SUB_AGENT_RECURSION,
         "callbacks": complex_callbacks,
     }
+
+    _rebind_tool_state(tools, state)
 
     # Execute — no wall-clock timeout for deep agent; tool call budget
     # (_ToolCallBudget) stops the agent after _MAX_TOOL_CALLS_COMPLEX calls.
@@ -849,13 +850,10 @@ async def _execute_multi_step_sub_agent(
     tool_guidance = _build_sub_agent_tool_guidance(task, state)
     agent_instructions = _build_sub_agent_instructions(state)
 
-    time_ctx = ""
-    current_time = state.get("current_time")
-    timezone = state.get("timezone")
-    if current_time:
-        time_ctx += f"Current time: {current_time}"
-    if timezone:
-        time_ctx += f"\nTimezone: {timezone}"
+    time_ctx = build_llm_time_context(
+        current_time=state.get("current_time"),
+        time_zone=state.get("timezone"),
+    )
 
     # Execute each step sequentially, accumulating results
     all_tool_results = []
@@ -892,6 +890,7 @@ async def _execute_multi_step_sub_agent(
 
         system_prompt = MINI_ORCHESTRATOR_PROMPT.format(
             task_description=task_desc,
+            task_scope_block=_format_task_scope_block(task),
             sub_steps=steps_text,
             tool_schemas=tool_schemas_text or "No tool schemas available.",
             task_context=step_context,
@@ -930,6 +929,8 @@ async def _execute_multi_step_sub_agent(
                 "recursion_limit": MAX_SUB_AGENT_RECURSION,
                 "callbacks": callbacks,
             }
+
+            _rebind_tool_state(tools, state)
 
             # No wall-clock timeout — budget per step limits tool calls.
             # Keepalive prevents proxy timeout during each step's execution.
@@ -1095,6 +1096,14 @@ def _extract_tool_results(
         tool_name = msg.name if hasattr(msg, "name") else "unknown"
         result_content = msg.content
 
+        # Parse JSON strings back to dicts so downstream code can access
+        # structured fields (result_type, blocks, web_results, etc.).
+        if isinstance(result_content, str):
+            try:
+                result_content = json.loads(result_content)
+            except (json.JSONDecodeError, ValueError):
+                pass
+
         # Process retrieval results from ToolMessage only if NOT using the buffer
         # (buffer path already handled above — avoids double-processing)
         if "retrieval" in tool_name.lower() and not deep_buffer:
@@ -1121,6 +1130,25 @@ def _extract_tool_results(
         })
 
     return tool_results
+
+
+def _rebind_tool_state(tools: list, state: object) -> None:
+    """Re-bind tool state references to the current node's state dict.
+
+    Tools were created in the orchestrator node and hold a stale reference
+    to that node's state snapshot. LangGraph creates a new state dict on
+    each node transition, so retrieval writes (final_results,
+    virtual_record_id_to_result) must land in the active state object
+    that this node will return — otherwise downstream nodes see EMPTY.
+    """
+    for _t in tools:
+        _wrapper = getattr(_t, '_tool_wrapper', None)
+        if _wrapper is None:
+            continue
+        if getattr(_wrapper, 'instance_creator', None) is not None:
+            _wrapper.instance_creator.state = state
+        with contextlib.suppress(Exception):
+            _wrapper.chat_state = state
 
 
 def _detect_status(result_content: object) -> str:
@@ -1189,6 +1217,10 @@ def _wrap_tools_with_budget(
             )
             if hasattr(tool, "_original_name"):
                 new_tool._original_name = tool._original_name
+            # Preserve _tool_wrapper so re-binding code can update state refs
+            # on the wrapped tool after budget-wrapping.
+            if hasattr(tool, "_tool_wrapper"):
+                new_tool._tool_wrapper = tool._tool_wrapper
             wrapped.append(new_tool)
         except Exception as e:
             log.warning("Failed to wrap tool %s: %s, using original", tool_name, e)
@@ -1196,24 +1228,29 @@ def _wrap_tools_with_budget(
 
     return wrapped
 
-
 def _wrap_retrieval_tools_for_context_efficiency(
     tools: list,
     state: DeepAgentState,
     log: logging.Logger,
 ) -> list:
     """
-    Wrap retrieval tools to strip final_results from the LLM's context window.
+    Wrap retrieval tools to track state writes and enable correct citation handling.
 
-    Retrieval tool output contains final_results with full document block content.
-    A sub-agent making 5 calls with limit=100 accumulates 8M+ tokens in its message
-    history, crashing the LLM with a context length error.
+    The retrieval tool (search_internal_knowledge) writes all citation data directly
+    to state["final_results"] / state["virtual_record_id_to_result"] and returns a
+    formatted string containing the full <record> blocks.
 
-    This wrapper:
-    1. Stores the full result (with final_results) in state["_deep_retrieval_buffer"]
-    2. Returns only content/status/metadata to the LangGraph react agent
+    This wrapper serves two purposes:
+    1. Buffers the full return value in state["_deep_retrieval_buffer"] so that
+       _extract_tool_results knows state was already populated by the tool and skips
+       the fallback ToolMessage re-processing path (the `if not deep_buffer:` guard).
+    2. Returns the result UNCHANGED — the sub-agent LLM must see the full <record>
+       content to read and synthesize precise, in-depth answers. Stripping content
+       here would degrade answer quality.
 
-    The full results are later processed by _extract_tool_results for citations.
+    _tool_wrapper is preserved on the new tool so _rebind_tool_state() can update
+    the Retrieval instance's self.state to the current node's state dict rather than
+    the orchestrator's stale snapshot (which would cause citations to be empty).
     """
     from langchain_core.tools import StructuredTool as LCStructuredTool
 
@@ -1240,21 +1277,16 @@ def _wrap_retrieval_tools_for_context_efficiency(
         ) -> str:
             result = await _orig_coro(**kwargs) if _orig_coro else _orig_func(**kwargs)
             try:
-                buffer = state.setdefault("_deep_retrieval_buffer", [])
-                buffer.append(result)
-                if isinstance(result, str):
-                    try:
-                        parsed = json.loads(result)
-                        stripped = {
-                            "status": parsed.get("status", "success"),
-                            "content": parsed.get("content", ""),
-                            "metadata": parsed.get("metadata", {}),
-                        }
-                        return json.dumps(stripped, ensure_ascii=False)
-                    except (json.JSONDecodeError, AttributeError):
-                        pass
+                # Buffer the full result so _extract_tool_results knows state was
+                # already written by the tool and skips double-processing of
+                # ToolMessage content (the `if not deep_buffer:` guard).
+                # The full <record> content is returned unchanged so the sub-agent
+                # LLM can read and synthesize it into precise, in-depth answers.
+                if state.get("_deep_retrieval_buffer") is None:
+                    state["_deep_retrieval_buffer"] = []
+                state["_deep_retrieval_buffer"].append(result)
             except Exception as e:
-                log.warning("Failed to strip retrieval output for %s: %s", _tool_name, e)
+                log.warning("Failed to buffer retrieval output for %s: %s", _tool_name, e)
             return result
 
         try:
@@ -1268,6 +1300,12 @@ def _wrap_retrieval_tools_for_context_efficiency(
             )
             if hasattr(tool, "_original_name"):
                 new_tool._original_name = tool._original_name
+            # Preserve _tool_wrapper so _rebind_tool_state() can update the
+            # Retrieval instance's self.state to the current node's state dict.
+            # Without this, the tool writes final_results to the orchestrator's
+            # stale state snapshot and citations are always empty.
+            if hasattr(tool, "_tool_wrapper"):
+                new_tool._tool_wrapper = tool._tool_wrapper
             wrapped.append(new_tool)
             log.debug("Wrapped retrieval tool %s for context efficiency", tool_name)
         except Exception as e:
@@ -1275,8 +1313,6 @@ def _wrap_retrieval_tools_for_context_efficiency(
             wrapped.append(tool)
 
     return wrapped
-
-
 def _make_budgeted_coro(
     orig_coro: Callable[..., Coroutine[Any, Any, str]] | None,
     orig_func: Callable[..., str] | None,
@@ -1383,19 +1419,19 @@ async def _prewarm_clients(
 # Agent instructions builder
 # ---------------------------------------------------------------------------
 
+def _format_task_scope_block(task: SubAgentTask) -> str:
+    """Orchestrator-distilled guidance for this task; never the user's verbatim system prompt / instructions."""
+    raw = task.get("scoped_instructions")
+    text = str(raw).strip() if raw else ""
+    if not text:
+        return ""
+    # Trailing blank lines so the next template section (e.g. ## Context) is not glued to the text.
+    return f"## Task-scoped agent guidance\n{text}\n\n"
+
+
 def _build_sub_agent_instructions(state: DeepAgentState) -> str:
-    """Build agent instructions prefix for sub-agent prompts.
-
-    Includes the agent's configured instructions and current user context
-    so sub-agents follow the same behavioral constraints and know who
-    the current user is (critical for "my" / "me" queries).
-    """
+    """User/org identity only. Verbatim workspace system prompt and instructions stay orchestrator-side."""
     parts = []
-
-    # Agent instructions (workflow-specific behavior)
-    instructions = state.get("instructions", "")
-    if instructions and instructions.strip():
-        parts.append(f"## Agent Instructions\n{instructions.strip()}")
 
     # Current user context — sub-agents need this to resolve "my space",
     # "my tickets", "assigned to me", etc. Without it, the LLM guesses
@@ -1465,25 +1501,64 @@ def _build_sub_agent_tool_guidance(
         "only if the task requires comprehensive data (reports, summaries)."
     )
 
-    # Retrieval-specific guidance — maximise coverage via diverse queries
+    # Retrieval-specific guidance — connector scoping + diverse query coverage
     is_retrieval = any(d in ("retrieval", "knowledge") for d in domains)
     if is_retrieval:
         parts.append(
-            "\n## Knowledge Base Search Strategy\n"
-            "Your goal is to retrieve the MOST RELEVANT set of information.\n"
-            "1. **Derive search queries from the TASK DESCRIPTION**, not the raw user message. "
-            "The task description contains the resolved topic.\n"
-            "2. **Make 2-3 diverse search calls** with DIFFERENT query formulations:\n"
-            "   - First: a broad semantic query capturing the main topic\n"
-            "   - Then: rephrase using synonyms, related terms, or different angles\n"
-            "   - Then: targeted queries for specific sub-topics or details\n"
-            "3. **Use limit=10** on each call.\n"
-            "4. **You have a hard budget of 5 search calls.** The retrieval system "
-            "returns matching blocks per query, so additional queries with similar "
-            "terms will return the same results. Quality of query diversity matters "
-            "more than quantity of calls.\n"
-            "5. The retrieval results will be processed downstream for citations — "
-            "your job is to surface relevant content with focused queries."
+            "\n## Knowledge Base Search Strategy\n\n"
+            "### Step 1 — Identify the source(s) and correct parameter from your task description\n"
+            "Your task description specifies WHICH source(s) to search and WHICH parameter to use.\n"
+            "Read it carefully — there are two distinct filter parameters:\n\n"
+            "  **App connectors** (identified by `connector_id` in the task description):\n"
+            "  • One connector_id given → every call MUST use `connector_ids: [\"<that id>\"]`.\n"
+            "  • Multiple connector_ids → one parallel call per connector, each with its own\n"
+            "    single `connector_ids`. Never merge connector_ids into one call.\n"
+            "  • Use ONLY `connector_ids` — NEVER pass `collection_ids` for a connector.\n\n"
+            "  **KB collections** (identified by `collection_ids` or `record_group_id` in the task):\n"
+            "  • One collection_id given → every call MUST use `collection_ids: [\"<that id>\"]`.\n"
+            "  • Multiple collection_ids → one parallel call per collection.\n"
+            "  • Use ONLY `collection_ids` — NEVER pass `connector_ids` for a KB collection.\n\n"
+            "  **No ID specified / full KB search**:\n"
+            "  • Omit BOTH `connector_ids` and `collection_ids` — this searches all indexed content.\n\n"
+            "  ⚠️ **CRITICAL**: Using the wrong parameter returns empty results.\n"
+            "  `connector_ids` → for app connectors (Jira, Confluence, Slack, …)\n"
+            "  `collection_ids` → for KB record groups (knowledge base collections)\n\n"
+            "### Step 2 — Build diverse search queries\n"
+            "Your goal is to surface the MOST RELEVANT content across the assigned source(s).\n"
+            "1. **Derive queries from the TASK DESCRIPTION** — it contains the resolved topic.\n"
+            "2. **Issue 2–4 calls per source** with DIFFERENT query formulations in parallel:\n"
+            "   - Broad semantic query capturing the main topic\n"
+            "   - Rephrasing with synonyms, related terms, or different angles\n"
+            "   - Targeted queries for specific sub-topics or details mentioned in the task\n"
+            "3. **Use limit=10** on each call to maximise results per query.\n"
+            "4. **Hard budget: 5 search calls per source.** Quality of query diversity "
+            "matters more than call count — similar queries return the same blocks.\n\n"
+            "### Step 3 — Call format reminder\n"
+            "```\n"
+            "# For an app connector:\n"
+            "search_internal_knowledge(query=\"<query>\", connector_ids=[\"<connector_id>\"], limit=10)\n\n"
+            "# For a KB collection:\n"
+            "search_internal_knowledge(query=\"<query>\", collection_ids=[\"<record_group_id>\"], limit=10)\n\n"
+            "# For full KB (no specific ID):\n"
+            "search_internal_knowledge(query=\"<query>\", limit=10)\n"
+            "```\n"
+            "The retrieval results are processed downstream for citations. "
+            "Your job is to surface relevant content; do not try to parse or filter results yourself."
+        )
+
+    has_web_tools = any("web_search" in t or "fetch_url" in t for t in tool_names)
+    if has_web_tools:
+        parts.append(
+            "\n## Web Search Rules\n"
+            "- Prefer `web_search` over training data for anything that may have changed: "
+            "news, prices, weather, software versions, docs, regulations, current events.\n"
+            "- Also when the task asks for \"latest\"/\"current\"/\"up-to-date\" info.\n"
+            "- Use training data only for timeless knowledge. When in doubt, prefer `web_search`.\n"
+            "- Use `fetch_url` to get full content from a `web_search` result URL.\n"
+            "- **URL fetch failure recovery**: if `fetch_url` returns `ok: false` for a URL, "
+            "assess whether the context collected so far is sufficient to complete the task. "
+            "If it is not, identify other relevant URLs from previous search results and fetch "
+            "them until sufficient context is available or all candidates are exhausted."
         )
 
     # Generic link extraction guidance (for non-retrieval tasks)

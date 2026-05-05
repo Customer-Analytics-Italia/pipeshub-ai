@@ -196,7 +196,7 @@ class TestGetFreshDatasource:
         connector.external_client = mock_ext_client
 
         connector.config_service.get_config = AsyncMock(return_value={
-            "auth": {"authType": "OAUTH"},
+            "auth": {"authType": "OAUTH", "baseUrl": "https://acme.atlassian.net"},
             "credentials": {"access_token": "new-token"},
         })
 
@@ -217,7 +217,7 @@ class TestGetFreshDatasource:
         connector.external_client = mock_ext_client
 
         connector.config_service.get_config = AsyncMock(return_value={
-            "auth": {"authType": "OAUTH"},
+            "auth": {"authType": "OAUTH", "baseUrl": "https://acme.atlassian.net"},
             "credentials": {"access_token": "same-token"},
         })
 
@@ -231,7 +231,7 @@ class TestGetFreshDatasource:
         connector = _make_connector()
         connector.external_client = MagicMock()
         connector.config_service.get_config = AsyncMock(return_value={
-            "auth": {"authType": "OAUTH"},
+            "auth": {"authType": "OAUTH", "baseUrl": "https://acme.atlassian.net"},
             "credentials": {},
         })
 
@@ -1302,11 +1302,11 @@ class TestMapConfluencePermission:
 
     def test_restrict_content(self):
         c = _conn()
-        assert c._map_confluence_permission("restrict_content", "space") == PermissionType.OTHER
+        assert c._map_confluence_permission("restrict_content", "space") == PermissionType.READ
 
     def test_export(self):
         c = _conn()
-        assert c._map_confluence_permission("export", "space") == PermissionType.OTHER
+        assert c._map_confluence_permission("export", "space") == PermissionType.READ
 
 
 # ===========================================================================
@@ -1325,7 +1325,7 @@ class TestMapPagePermission:
 
     def test_unknown(self):
         c = _conn()
-        assert c._map_page_permission("delete") == PermissionType.OTHER
+        assert c._map_page_permission("delete") == PermissionType.READ
 
 
 # ===========================================================================
@@ -2907,7 +2907,7 @@ class TestMapConfluencePermissionEdgeCases:
     def test_unknown_returns_other(self):
         c = _conn()
         result = c._map_confluence_permission("unknown_op", "unknown_target")
-        assert result == PermissionType.OTHER
+        assert result == PermissionType.READ
 
 
 # ===========================================================================
@@ -2917,12 +2917,12 @@ class TestMapPagePermissionEdgeCases:
     def test_delete_permission(self):
         c = _conn()
         result = c._map_page_permission("delete")
-        assert result == PermissionType.OTHER
+        assert result == PermissionType.READ
 
     def test_administer_permission(self):
         c = _conn()
         result = c._map_page_permission("administer")
-        assert result == PermissionType.OTHER
+        assert result == PermissionType.READ
 
 
 # ===========================================================================
@@ -3084,7 +3084,7 @@ class TestMapConfluencePermissionFullCoverage:
 
     def test_export_fallback(self):
         c = _c()
-        assert c._map_confluence_permission("export", "space") == PermissionType.OTHER
+        assert c._map_confluence_permission("export", "space") == PermissionType.READ
 
 
 class TestMapPagePermissionFullCoverage:
@@ -3098,7 +3098,7 @@ class TestMapPagePermissionFullCoverage:
 
     def test_unknown(self):
         c = _c()
-        assert c._map_page_permission("magic") == PermissionType.OTHER
+        assert c._map_page_permission("magic") == PermissionType.READ
 
 
 class TestTransformToAppUserFullCoverage:

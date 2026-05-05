@@ -27,6 +27,7 @@ from app.config.constants.arangodb import (
     ProgressStatus,
 )
 from app.config.constants.http_status_code import HttpStatusCode
+from app.connectors.core.constants import IconPaths
 from app.connectors.core.base.connector.connector_service import BaseConnector
 from app.connectors.core.base.data_processor.data_source_entities_processor import (
     DataSourceEntitiesProcessor,
@@ -50,6 +51,7 @@ from app.connectors.core.registry.connector_builder import (
     DocumentationLink,
     SyncStrategy,
 )
+from app.connectors.core.constants import CONNECTOR_EMAIL_IDENTITY_INFO
 from app.connectors.core.registry.filters import (
     FilterCategory,
     FilterCollection,
@@ -125,9 +127,19 @@ PSEUDO_USER_GROUP_PREFIX = "[Pseudo-User]"
             ),
             fields=[
                 CommonFields.client_id("Atlassian OAuth App"),
-                CommonFields.client_secret("Atlassian OAuth App")
+                CommonFields.client_secret("Atlassian OAuth App"),
+                AuthField(
+                    name="baseUrl",
+                    display_name="Atlassian site URL",
+                    placeholder="https://yourcompany.atlassian.net",
+                    description="Atlassian site URL to use. Must match the Confluence site you want to sync.",
+                    field_type="URL",
+                    required=True,
+                    max_length=2000,
+                    is_secret=False,
+                ),
             ],
-            icon_path="/assets/icons/connectors/confluence.svg",
+            icon_path=IconPaths.connector_icon(Connectors.CONFLUENCE.value),
             app_group="Atlassian",
             app_description="OAuth application for accessing Confluence Cloud API and collaboration features",
             app_categories=["Knowledge Management", "Collaboration"]
@@ -165,9 +177,13 @@ PSEUDO_USER_GROUP_PREFIX = "[Pseudo-User]"
             ),
         ])
     ])\
-    .with_info("⚠️ Important: In order for users to get access to Confluence data, each user needs to make their email visible in their Confluence account settings. Users can do this by going to their Confluence profile settings and switching email visibility to Public.")\
+    .with_info(
+        "Important: In order for users to get access to Confluence data, each user needs to make their email visible in their Confluence account settings. Users can do this by going to their Confluence profile settings and switching email visibility to Public."
+        + "\n\n"
+        + CONNECTOR_EMAIL_IDENTITY_INFO
+    )\
     .configure(lambda builder: builder
-        .with_icon("/assets/icons/connectors/confluence.svg")
+        .with_icon(IconPaths.connector_icon(Connectors.CONFLUENCE.value))
         .with_realtime_support(False)
         .add_documentation_link(DocumentationLink(
             "Confluence Cloud OAuth Setup",
@@ -2108,8 +2124,8 @@ class ConfluenceConnector(BaseConnector):
             if operation_key in ["create", "delete", "archive"]:
                 return PermissionType.WRITE
 
-        # Everything else = OTHER
-        return PermissionType.OTHER
+        # Everything else = READ
+        return PermissionType.READ
 
     def _map_page_permission(self, operation: str) -> PermissionType:
         """
@@ -2130,7 +2146,7 @@ class ConfluenceConnector(BaseConnector):
         elif operation == "update":
             return PermissionType.WRITE
         else:
-            return PermissionType.OTHER
+            return PermissionType.READ
 
     async def _transform_page_restriction_to_permissions(
         self,

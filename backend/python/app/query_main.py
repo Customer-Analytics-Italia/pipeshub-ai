@@ -1,7 +1,7 @@
+import asyncio
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
-import httpx
 import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
@@ -13,9 +13,9 @@ from app.api.routes.agent import router as agent_router
 from app.api.routes.chatbot import router as chatbot_router
 from app.api.routes.health import router as health_router
 from app.api.routes.search import router as search_router
+from app.api.routes.ai_models_registry import router as ai_models_registry_router
+from app.api.routes.speech import router as speech_router
 from app.api.routes.toolsets import router as toolsets_router
-from app.config.constants.http_status_code import HttpStatusCode
-from app.config.constants.service import DefaultEndpoints, config_node_constants
 from app.containers.query import QueryAppContainer
 from app.health.health import Health
 from app.services.messaging.config import get_message_broker_type
@@ -117,7 +117,6 @@ async def stop_kafka_consumers(container: QueryAppContainer) -> bool|None:
             # Clear the consumers list
             if hasattr(container, 'kafka_consumers'):
                 container.kafka_consumers = []
-            return True
     return None
 
 @asynccontextmanager
@@ -156,16 +155,37 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     else:
         logger.info("Found organizations in the system")
         retrieval_service = await container.retrieval_service()
-        await retrieval_service.get_embedding_model_instance()
 
-    # Initialize toolset registry for agent tool execution
-    # This imports toolset modules which register tools in the global registry
+        # Warm up the embedding model in the background. The default
+        # HuggingFace model (BAAI/bge-large-en-v1.5) can take minutes to
+        # download and load on a cold cache, which would otherwise block the
+        # FastAPI lifespan and prevent the service from accepting traffic
+        # (including health checks) until it finishes. Kick it off as a
+        # background task; callers of `get_embedding_model_instance()` will
+        # await/coordinate via the internal lock and lazy-load on first use
+        # if the warmup hasn't completed yet.
+        async def _warmup_embedding_model() -> None:
+            try:
+                logger.info("🔥 Warming up embedding model in background")
+                await retrieval_service.get_embedding_model_instance()
+                logger.info("✅ Embedding model warmup complete")
+            except Exception as warmup_error:
+                logger.error(
+                    f"❌ Embedding model warmup failed (will retry on first use): {warmup_error}"
+                )
+
+        app.state.embedding_warmup_task = asyncio.create_task(_warmup_embedding_model())
+
+    # Initialize toolset registry for agent tool execution.
+    # auto_discover_toolsets() imports ~20 heavy SDK modules (Google, Microsoft,
+    # Slack, …) synchronously. Offload to a worker thread so the event loop
+    # stays responsive and the lifespan completes faster.
     logger.info("🔄 Initializing in-memory toolset registry for agents...")
     from app.agents.registry.toolset_registry import get_toolset_registry
     from app.agents.tools.registry import _global_tools_registry
 
     toolset_registry = get_toolset_registry()
-    toolset_registry.auto_discover_toolsets()
+    await asyncio.to_thread(toolset_registry.auto_discover_toolsets)
     app.state.toolset_registry = toolset_registry
     logger.info(f"✅ Loaded {len(toolset_registry.list_toolsets())} toolsets in memory")
 
@@ -176,6 +196,16 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     yield
     # Shutdown
     logger.info("🔄 Shutting down application")
+
+    # Cancel embedding warmup task if it is still running.
+    warmup_task: asyncio.Task | None = getattr(app.state, "embedding_warmup_task", None)
+    if warmup_task is not None and not warmup_task.done():
+        warmup_task.cancel()
+        try:
+            await warmup_task
+        except (asyncio.CancelledError, Exception):
+            pass
+
     # Stop all message consumers
     try:
         await stop_kafka_consumers(app_container)
@@ -239,39 +269,12 @@ app.add_middleware(
 
 @app.get("/health")
 async def health_check() -> JSONResponse:
-    """Health check endpoint that also verifies connector service health"""
+    """Health check endpoint for the query service itself"""
     try:
-        endpoints = await app.container.config_service().get_config(
-            config_node_constants.ENDPOINTS.value
-        )
-        connector_endpoint = endpoints.get("connectors").get("endpoint", DefaultEndpoints.CONNECTOR_ENDPOINT.value)
-        connector_url = f"{connector_endpoint}/health"
-        async with httpx.AsyncClient() as client:
-            connector_response = await client.get(connector_url, timeout=5.0)
-
-            if connector_response.status_code != HttpStatusCode.SUCCESS.value:
-                return JSONResponse(
-                    status_code=500,
-                    content={
-                        "status": "fail",
-                        "error": f"Connector service unhealthy: {connector_response.text}",
-                        "timestamp": get_epoch_timestamp_in_ms(),
-                    },
-                )
-
-            return JSONResponse(
-                status_code=200,
-                content={
-                    "status": "healthy",
-                    "timestamp": get_epoch_timestamp_in_ms(),
-                },
-            )
-    except httpx.RequestError as e:
         return JSONResponse(
-            status_code=500,
+            status_code=200,
             content={
-                "status": "fail",
-                "error": f"Failed to connect to connector service: {str(e)}",
+                "status": "healthy",
                 "timestamp": get_epoch_timestamp_in_ms(),
             },
         )
@@ -279,7 +282,7 @@ async def health_check() -> JSONResponse:
         return JSONResponse(
             status_code=500,
             content={
-                "status": "fail",
+                "status": "unhealthy",
                 "error": str(e),
                 "timestamp": get_epoch_timestamp_in_ms(),
             },
@@ -310,9 +313,11 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 # Include routes from routes.py
 app.include_router(search_router, prefix="/api/v1")
 app.include_router(chatbot_router, prefix="/api/v1")
+app.include_router(speech_router, prefix="/api/v1")
 app.include_router(agent_router, prefix="/api/v1/agent")
 app.include_router(toolsets_router)
 app.include_router(health_router, prefix="/api/v1")
+app.include_router(ai_models_registry_router, prefix="/api/v1")
 
 
 def run(host: str = "0.0.0.0", port: int = 8000, reload: bool = True) -> None:

@@ -15,7 +15,6 @@ import os
 import uuid
 from typing import Any, AsyncGenerator
 
-import pytest
 import pytest_asyncio
 from aiokafka import AIOKafkaConsumer, AIOKafkaProducer
 from redis.asyncio import Redis
@@ -46,7 +45,7 @@ def _redis_password() -> str | None:
 # Kafka fixtures
 # ---------------------------------------------------------------------------
 
-@pytest_asyncio.fixture
+@pytest_asyncio.fixture(scope="session", loop_scope="session")
 async def kafka_producer() -> AsyncGenerator[AIOKafkaProducer, None]:
     producer = AIOKafkaProducer(
         bootstrap_servers=_kafka_brokers(),
@@ -58,7 +57,7 @@ async def kafka_producer() -> AsyncGenerator[AIOKafkaProducer, None]:
     await producer.stop()
 
 
-@pytest_asyncio.fixture
+@pytest_asyncio.fixture(scope="session", loop_scope="session")
 async def kafka_consumer_factory():
     """Factory that creates a consumer subscribed to given topics with a unique group."""
     consumers: list[AIOKafkaConsumer] = []
@@ -87,7 +86,7 @@ async def kafka_consumer_factory():
 # Redis fixtures
 # ---------------------------------------------------------------------------
 
-@pytest_asyncio.fixture
+@pytest_asyncio.fixture(scope="session", loop_scope="session")
 async def redis_client() -> AsyncGenerator[Redis, None]:
     client = Redis(
         host=_redis_host(),
@@ -345,7 +344,7 @@ class EventConsumer:
             self._kafka_consumer = None
 
 
-@pytest_asyncio.fixture(scope="module")
+@pytest_asyncio.fixture(scope="module", loop_scope="session")
 async def event_consumer():
     """Module-scoped event consumer — one consumer group per test module."""
     consumer = EventConsumer()

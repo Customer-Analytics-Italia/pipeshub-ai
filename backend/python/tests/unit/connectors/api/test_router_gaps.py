@@ -85,6 +85,7 @@ from app.connectors.api.router import (
     stream_record_internal,
 )
 from app.connectors.core.registry.connector_builder import ConnectorScope
+from app.models.entities import RecordType
 
 _ROUTER = "app.connectors.api.router"
 
@@ -99,6 +100,7 @@ def _mock_record(**overrides):
         "id": "rec-1",
         "org_id": "org-1",
         "record_name": "doc.pdf",
+        "record_type": RecordType.FILE,
         "mime_type": "application/pdf",
         "connector_name": Connectors.GOOGLE_DRIVE,
         "connector_id": "conn-1",
@@ -1085,7 +1087,7 @@ class TestExtractEssentialOAuthFields:
         config = {"_id": "id1"}
         result = _extract_essential_oauth_fields(config, "SLACK")
         assert result["connectorType"] == "SLACK"
-        assert result["iconPath"] == "/assets/icons/connectors/default.svg"
+        assert result["iconPath"] == "/icons/connectors/default.svg"
         assert result["appGroup"] == ""
         assert result["appCategories"] == []
 
@@ -3410,6 +3412,7 @@ def _mock_record(**overrides):
         "id": "rec-1",
         "org_id": "org-1",
         "record_name": "doc.pdf",
+        "record_type": RecordType.FILE,
         "mime_type": "application/pdf",
         "connector_name": Connectors.GOOGLE_DRIVE,
         "connector_id": "conn-1",
@@ -4396,7 +4399,7 @@ class TestExtractEssentialOAuthFieldsCoverage:
         config = {"_id": "id1"}
         result = _extract_essential_oauth_fields(config, "SLACK")
         assert result["connectorType"] == "SLACK"
-        assert result["iconPath"] == "/assets/icons/connectors/default.svg"
+        assert result["iconPath"] == "/icons/connectors/default.svg"
         assert result["appGroup"] == ""
         assert result["appCategories"] == []
 

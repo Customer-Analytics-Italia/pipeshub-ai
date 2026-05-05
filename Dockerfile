@@ -38,13 +38,24 @@ WORKDIR /app/python
 COPY ./backend/python/pyproject.toml ./
 
 # Install Python dependencies
+# FASTEMBED_CACHE_PATH is set so fastembed writes to a persistent location
+# (by default it uses /tmp/fastembed_cache which we wipe below). The same
+# env var is re-exported in the runtime stage so `FastEmbedSparse(...)` at
+# runtime finds the pre-downloaded model without any code change.
+ENV FASTEMBED_CACHE_PATH=/root/.cache/fastembed
 RUN uv pip install --system -e . && \
-    # Download lightweight NLP models (small, baked into image)
+    # Download ML models so the runtime image doesn't have to pull them over
+    # the network on first use (which previously stalled query service
+    # startup by minutes on cold caches).
     python -m spacy download en_core_web_sm && \
     python -c "import nltk; nltk.download('punkt', quiet=True)" && \
-    # NOTE: BAAI/bge-reranker-base (~570MB) is downloaded at first startup into a volume.
-    # To pre-bake it instead, uncomment the next line (increases image size significantly):
-    # python -c "from sentence_transformers import CrossEncoder; CrossEncoder(model_name='BAAI/bge-reranker-base')" && \
+    # Default dense embedding model used by RetrievalService (see
+    # app/config/constants/ai_models.py -> DEFAULT_EMBEDDING_MODEL). Downloading
+    # via HuggingFaceEmbeddings matches the runtime import path and populates
+    # /root/.cache/huggingface.
+    python -c "from langchain_huggingface import HuggingFaceEmbeddings; HuggingFaceEmbeddings(model_name='BAAI/bge-large-en-v1.5', model_kwargs={'device': 'cpu'}, encode_kwargs={'normalize_embeddings': True})" && \
+    # Sparse embedding model used by FastEmbedSparse in RetrievalService.__init__.
+    python -c "from langchain_qdrant import FastEmbedSparse; FastEmbedSparse(model_name='Qdrant/BM25')" && \
     # Clean up caches and __pycache__ to save space
     rm -rf /root/.cache/pip /root/.cache/uv /tmp/* && \
     find /usr/local/lib/python3.12 -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true && \
@@ -81,21 +92,30 @@ RUN npm run build && \
     npm cache clean --force
 
 # -----------------------------------------------------------------------------
-# Stage 4: Frontend Build
+# Stage 4: Frontend Build (Next.js in `frontend/`)
 # -----------------------------------------------------------------------------
+# Static export so the Node.js API can serve files from `backend/dist/public`.
 FROM node:20-slim AS frontend-build
 WORKDIR /app/frontend
 
-RUN mkdir -p packages
 COPY frontend/package*.json ./
-COPY frontend/packages ./packages/
 
 RUN npm config set legacy-peer-deps true && \
     npm install && \
     npm cache clean --force
 
 COPY frontend/ ./
-RUN npm run build
+
+# Force Next.js static export regardless of what next.config.mjs ships with,
+# so the resulting assets can be served directly from disk.
+RUN if grep -q "output: 'export'" next.config.mjs; then \
+        sed -i "s|//[[:space:]]*output: 'export',|output: 'export',|" next.config.mjs; \
+    else \
+        sed -i "s|const nextConfig = {|const nextConfig = { output: 'export',|" next.config.mjs; \
+    fi && \
+    npm run build && \
+    mkdir -p /out && \
+    cp -a out/. /out/
 
 # -----------------------------------------------------------------------------
 # Stage 5: Runtime Base - Minimal runtime dependencies only
@@ -156,11 +176,17 @@ RUN apt-get update && \
 FROM runtime-base AS runtime
 WORKDIR /app
 
+# Point fastembed at the pre-populated cache we copy in below, matching the
+# FASTEMBED_CACHE_PATH used at build time in the python-deps stage.
+ENV FASTEMBED_CACHE_PATH=/root/.cache/fastembed
+
 # Copy Python site-packages from build stage
 COPY --from=python-deps /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
 COPY --from=python-deps /usr/local/bin /usr/local/bin
 
-# Copy NLTK data (small, baked into image)
+# Copy ML model data (dense HF embeddings + reranker, sparse fastembed, NLTK)
+COPY --from=python-deps /root/.cache/huggingface /root/.cache/huggingface
+COPY --from=python-deps /root/.cache/fastembed /root/.cache/fastembed
 COPY --from=python-deps /root/nltk_data /root/nltk_data
 # NOTE: HuggingFace models are downloaded at first startup into /root/.cache/huggingface
 # which is mapped to the pipeshub_model_cache volume in docker-compose.
@@ -171,8 +197,8 @@ COPY --from=nodejs-backend /app/backend/src/modules/mail ./backend/src/modules/m
 COPY --from=nodejs-backend /app/backend/src/modules/api-docs/pipeshub-openapi.yaml ./backend/src/modules/api-docs/pipeshub-openapi.yaml
 COPY --from=nodejs-backend /app/backend/node_modules ./backend/dist/node_modules
 
-# Copy frontend build
-COPY --from=frontend-build /app/frontend/dist ./backend/dist/public
+# Copy frontend build (normalized to /out by the selected frontend stage)
+COPY --from=frontend-build /out ./backend/dist/public
 
 # Copy Python application code
 COPY backend/python/app/ /app/python/app/

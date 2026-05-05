@@ -28,6 +28,9 @@ def mock_deps():
         "graph_provider": MagicMock(),
         "reranker_service": MagicMock(),
         "config_service": MagicMock(),
+        "model_name": "gpt-test",
+        "model_key": "test-model-key",
+        "has_sql_connector": False,
     }
 
 
@@ -90,6 +93,8 @@ class TestBuildInitialState:
         assert state["virtual_record_id_to_result"] == {}
         assert state["record_label_to_uuid_map"] == {}
         assert state["is_multimodal_llm"] is False
+        assert state["model_name"] == "gpt-test"
+        assert state["model_key"] == "test-model-key"
 
     def test_custom_chat_query_fields(self, mock_deps, minimal_user_info):
         cq = {
@@ -229,6 +234,75 @@ class TestBuildInitialState:
             **mock_deps,
         )
         assert state["org_info"] == {"name": "Acme"}
+
+    def test_has_sql_knowledge_false_when_no_knowledge(
+        self, mock_deps, minimal_chat_query, minimal_user_info
+    ):
+        state = build_initial_state(
+            chat_query=minimal_chat_query,
+            user_info=minimal_user_info,
+            **mock_deps,
+        )
+        assert state["has_sql_knowledge"] is False
+
+    def test_has_sql_knowledge_false_when_only_non_sql_knowledge(
+        self, mock_deps, minimal_user_info
+    ):
+        cq = {
+            "query": "q",
+            "knowledge": [
+                {"connectorId": "c1", "type": "GOOGLE_DRIVE", "filters": {}},
+            ],
+        }
+        state = build_initial_state(
+            chat_query=cq, user_info=minimal_user_info, **mock_deps
+        )
+        assert state["has_sql_knowledge"] is False
+
+    def test_has_sql_knowledge_true_when_postgresql_attached(
+        self, mock_deps, minimal_user_info
+    ):
+        cq = {
+            "query": "q",
+            "knowledge": [
+                {"connectorId": "c1", "type": "POSTGRESQL", "filters": {}},
+            ],
+        }
+        state = build_initial_state(
+            chat_query=cq, user_info=minimal_user_info, **mock_deps
+        )
+        assert state["has_sql_knowledge"] is True
+
+    def test_has_sql_knowledge_true_for_snowflake_and_mariadb(
+        self, mock_deps, minimal_user_info
+    ):
+        for t in ("SNOWFLAKE", "MARIADB"):
+            cq = {
+                "query": "q",
+                "knowledge": [{"connectorId": "c1", "type": t, "filters": {}}],
+            }
+            state = build_initial_state(
+                chat_query=cq, user_info=minimal_user_info, **mock_deps
+            )
+            assert state["has_sql_knowledge"] is True, f"expected True for type={t}"
+
+    def test_has_sql_connector_propagates_from_kwarg(
+        self, mock_deps, minimal_chat_query, minimal_user_info
+    ):
+        deps = {**mock_deps, "has_sql_connector": True}
+        state = build_initial_state(
+            chat_query=minimal_chat_query, user_info=minimal_user_info, **deps
+        )
+        assert state["has_sql_connector"] is True
+
+    def test_has_sql_connector_is_required_kwarg(
+        self, mock_deps, minimal_chat_query, minimal_user_info
+    ):
+        deps = {k: v for k, v in mock_deps.items() if k != "has_sql_connector"}
+        with pytest.raises(TypeError):
+            build_initial_state(
+                chat_query=minimal_chat_query, user_info=minimal_user_info, **deps
+            )
 
 
 # ===================================================================
@@ -511,6 +585,21 @@ class TestExtractKnowledgeConnectorIds:
     def test_non_dict_knowledge_entry_skipped(self):
         knowledge = [{"connectorId": "c1"}, "not-a-dict", 42]
         assert _extract_knowledge_connector_ids(knowledge) == ["c1"]
+
+    def test_skips_knowledge_base_pseudo_connectors(self):
+        knowledge = [
+            {"connectorId": "knowledgeBase_org-1"},
+            {"connectorId": "c1"},
+        ]
+        assert _extract_knowledge_connector_ids(knowledge) == ["c1"]
+
+    def test_deduplicates_connector_ids(self):
+        knowledge = [
+            {"connectorId": "c1"},
+            {"connectorId": "c1"},
+            {"connectorId": "c2"},
+        ]
+        assert _extract_knowledge_connector_ids(knowledge) == ["c1", "c2"]
 
 
 # ===================================================================

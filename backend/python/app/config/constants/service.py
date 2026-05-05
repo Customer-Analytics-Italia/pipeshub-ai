@@ -10,6 +10,7 @@ class config_node_constants(Enum):
     QDRANT = "/services/qdrant"
     REDIS = "/services/redis"
     AI_MODELS = "/services/aiModels"
+    WEB_SEARCH = "/services/webSearch"
     KAFKA = "/services/kafka"
     REDIS_STREAMS = "/services/redis-streams"
     MESSAGE_BROKER = "/services/message-broker"
@@ -17,6 +18,7 @@ class config_node_constants(Enum):
     SECRET_KEYS = "/services/secretKeys"
     STORAGE = "/services/storage"
     MIGRATIONS = "/services/migrations"
+    DEPLOYMENT = "/services/deployment"
 
     # Non-service paths
     # LOG_LEVEL = "/logLevel"
@@ -94,8 +96,11 @@ class Routes(Enum):
     STORAGE_PLACEHOLDER = "/api/v1/document/internal/placeholder"
     STORAGE_DIRECT_UPLOAD = "/api/v1/document/internal/{documentId}/directUpload"
     STORAGE_UPLOAD = "/api/v1/document/internal/upload"
+    STORAGE_UPLOAD_NEXT_VERSION = "/api/v1/document/internal/{documentId}/uploadNextVersion"
     STORAGE_DOWNLOAD = "/api/v1/document/internal/{documentId}/download"
     STORAGE_DOWNLOAD_EXTERNAL = "/api/v1/document/{documentId}/download"
+    STORAGE_BUFFER = "/api/v1/document/internal/{documentId}/buffer"
+
 
 class WebhookConfig(Enum):
     """Constants for webhook configuration"""

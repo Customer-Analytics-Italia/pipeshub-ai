@@ -133,35 +133,35 @@ Beyond search, our platform allows enterprises to create custom apps and AI agen
 - **Modular & Scalable Architecture** – Every service is loosely coupled to scale independently and adapt to your needs.
 
 ## Connectors
-
-<p display: flex; flex-wrap: wrap; gap: 12px;>
-<img src="https://raw.githubusercontent.com/pipeshub-ai/documentation/refs/heads/main/logo/gdrive.png" alt="Google Drive" width="50" height="50">
-<img src="https://raw.githubusercontent.com/pipeshub-ai/documentation/refs/heads/main/logo/gmail.png" alt="Gmail" width="50" height="50">
-<img src="https://raw.githubusercontent.com/pipeshub-ai/documentation/refs/heads/main/logo/gcalendar.png" alt="Google Calendar" width="50" height="50">
-<img src="https://raw.githubusercontent.com/pipeshub-ai/documentation/refs/heads/main/logo/gdocs.png" alt="Google Docs" width="50" height="50">
-<img src="https://raw.githubusercontent.com/pipeshub-ai/documentation/refs/heads/main/logo/gsheets.png" alt="Google Sheets" width="50" height="50">
-<img src="https://raw.githubusercontent.com/pipeshub-ai/documentation/refs/heads/main/logo/gslides.png" alt="Google Slides" width="50" height="50">
-<img src="https://raw.githubusercontent.com/pipeshub-ai/documentation/refs/heads/main/logo/gforms.png" alt="Google Forms" width="50" height="50">
-<img src="https://raw.githubusercontent.com/pipeshub-ai/documentation/refs/heads/main/logo/gmeet.png" alt="Google Meet" width="50" height="50">
-<img src="https://raw.githubusercontent.com/pipeshub-ai/documentation/refs/heads/main/logo/one-drive.png" alt="OneDrive" width="50" height="50">
-<img src="https://raw.githubusercontent.com/pipeshub-ai/documentation/refs/heads/main/logo/sharepoint.png" alt="SharePoint Online" width="50" height="50">
-<img src="https://raw.githubusercontent.com/pipeshub-ai/documentation/refs/heads/main/logo/outlook.png" alt="Outlook Calendar" width="50" height="50">
-<img src="https://raw.githubusercontent.com/pipeshub-ai/documentation/refs/heads/main/logo/teams.png" alt="Microsoft Teams" width="50" height="50">
-<img src="https://raw.githubusercontent.com/pipeshub-ai/documentation/refs/heads/main/logo/one-note.png" alt="OneNote" width="50" height="50">
-<img src="https://raw.githubusercontent.com/pipeshub-ai/documentation/refs/heads/main/logo/jira.png" alt="Jira" width="50" height="50">
-<img src="https://raw.githubusercontent.com/pipeshub-ai/documentation/refs/heads/main/logo/confluence.png" alt="Confluence" width="50" height="50">
-<img src="https://raw.githubusercontent.com/pipeshub-ai/documentation/refs/heads/main/logo/slack.png" alt="Slack" width="50" height="50">
-<img src="https://raw.githubusercontent.com/pipeshub-ai/documentation/refs/heads/main/logo/notion.png" alt="Notion" width="50" height="50">
-<img src="https://raw.githubusercontent.com/pipeshub-ai/documentation/refs/heads/main/logo/dropbox.png" alt="Dropbox" width="50" height="50">
-<img src="https://raw.githubusercontent.com/pipeshub-ai/documentation/refs/heads/main/logo/linear.png" alt="Linear" width="50" height="50">
-<img src="https://raw.githubusercontent.com/pipeshub-ai/documentation/refs/heads/main/logo/github.png" alt="GitHub" width="50" height="50">
-<img src="https://raw.githubusercontent.com/pipeshub-ai/documentation/refs/heads/main/logo/gitlab.png" alt="GitLab" width="50" height="50">
-<img src="https://raw.githubusercontent.com/pipeshub-ai/documentation/refs/heads/main/logo/zendesk.png" alt="Zendesk" width="50" height="50">
-<img src="https://raw.githubusercontent.com/pipeshub-ai/documentation/refs/heads/main/logo/airtable.png" alt="Airtable" width="50" height="50">
-<img src="https://raw.githubusercontent.com/pipeshub-ai/documentation/refs/heads/main/logo/bookstack.png" alt="Bookstack" width="50" height="50">
-<img src="https://raw.githubusercontent.com/pipeshub-ai/documentation/refs/heads/main/logo/s3.png" alt="S3" width="50" height="50">
-<img src="https://raw.githubusercontent.com/pipeshub-ai/documentation/refs/heads/main/logo/azure-blob.png" alt="Azure Blob" width="50" height="50">
-<img src="https://raw.githubusercontent.com/pipeshub-ai/documentation/refs/heads/main/logo/box.png" alt="Box" width="50" height="50">
+<p align="center">
+<picture><img src="https://raw.githubusercontent.com/pipeshub-ai/documentation/refs/heads/main/logo/gdrive.png" alt="Google Drive" width="50" height="50"></picture>
+<picture><img src="https://raw.githubusercontent.com/pipeshub-ai/documentation/refs/heads/main/logo/gmail.png" alt="Gmail" width="50" height="50"></picture>
+<picture><img src="https://raw.githubusercontent.com/pipeshub-ai/documentation/refs/heads/main/logo/gcalendar.png" alt="Google Calendar" width="50" height="50"></picture>
+<picture><img src="https://raw.githubusercontent.com/pipeshub-ai/documentation/refs/heads/main/logo/gdocs.png" alt="Google Docs" width="50" height="50"></picture>
+<picture><img src="https://raw.githubusercontent.com/pipeshub-ai/documentation/refs/heads/main/logo/gsheets.png" alt="Google Sheets" width="50" height="50"></picture>
+<picture><img src="https://raw.githubusercontent.com/pipeshub-ai/documentation/refs/heads/main/logo/gslides.png" alt="Google Slides" width="50" height="50"></picture>
+<picture><img src="https://raw.githubusercontent.com/pipeshub-ai/documentation/refs/heads/main/logo/gforms.png" alt="Google Forms" width="50" height="50"></picture>
+<picture><img src="https://raw.githubusercontent.com/pipeshub-ai/documentation/refs/heads/main/logo/gmeet.png" alt="Google Meet" width="50" height="50"></picture>
+<picture><img src="https://raw.githubusercontent.com/pipeshub-ai/documentation/refs/heads/main/logo/one-drive.png" alt="OneDrive" width="50" height="50"></picture>
+<picture><img src="https://raw.githubusercontent.com/pipeshub-ai/documentation/refs/heads/main/logo/sharepoint.png" alt="SharePoint Online" width="50" height="50"></picture>
+<picture><img src="https://raw.githubusercontent.com/pipeshub-ai/documentation/refs/heads/main/logo/outlook.png" alt="Outlook" width="50" height="50"></picture>
+<picture><img src="https://raw.githubusercontent.com/pipeshub-ai/documentation/refs/heads/main/logo/teams.png" alt="Microsoft Teams" width="50" height="50"></picture>
+<picture><img src="https://raw.githubusercontent.com/pipeshub-ai/documentation/refs/heads/main/logo/one-note.png" alt="OneNote" width="50" height="50"></picture>
+<picture><img src="https://raw.githubusercontent.com/pipeshub-ai/documentation/refs/heads/main/logo/jira.png" alt="Jira" width="50" height="50"></picture>
+<picture><img src="https://raw.githubusercontent.com/pipeshub-ai/documentation/refs/heads/main/logo/confluence.png" alt="Confluence" width="50" height="50"></picture>
+<picture><img src="https://raw.githubusercontent.com/pipeshub-ai/documentation/refs/heads/main/logo/slack.png" alt="Slack" width="50" height="50"></picture>
+<picture><img src="https://raw.githubusercontent.com/pipeshub-ai/documentation/refs/heads/main/logo/notion.png" alt="Notion" width="50" height="50"></picture>
+<picture><img src="https://raw.githubusercontent.com/pipeshub-ai/documentation/refs/heads/main/logo/dropbox.png" alt="Dropbox" width="50" height="50"></picture>
+<picture><img src="https://raw.githubusercontent.com/pipeshub-ai/documentation/refs/heads/main/logo/linear.png" alt="Linear" width="50" height="50"></picture>
+<picture><img src="https://raw.githubusercontent.com/pipeshub-ai/documentation/refs/heads/main/logo/github.png" alt="GitHub" width="50" height="50"></picture>
+<picture><img src="https://raw.githubusercontent.com/pipeshub-ai/documentation/refs/heads/main/logo/gitlab.png" alt="GitLab" width="50" height="50"></picture>
+<picture><img src="https://raw.githubusercontent.com/pipeshub-ai/documentation/refs/heads/main/logo/zendesk.png" alt="Zendesk" width="50" height="50"></picture>
+<picture><img src="https://raw.githubusercontent.com/pipeshub-ai/documentation/refs/heads/main/logo/airtable.png" alt="Airtable" width="50" height="50"></picture>
+<picture><img src="https://raw.githubusercontent.com/pipeshub-ai/documentation/refs/heads/main/logo/bookstack.png" alt="Bookstack" width="50" height="50"></picture>
+<picture><img src="https://raw.githubusercontent.com/pipeshub-ai/documentation/refs/heads/main/logo/s3.png" alt="S3" width="50" height="50"></picture>
+<picture><img src="https://raw.githubusercontent.com/pipeshub-ai/documentation/refs/heads/main/logo/azure-blob.png" alt="Azure Blob" width="50" height="50"></picture>
+<picture><img src="https://raw.githubusercontent.com/pipeshub-ai/documentation/refs/heads/main/logo/box.png" alt="Box" width="50" height="50"></picture>
+<br>
 </p>
 
 ## File Formats Supported
@@ -181,9 +181,9 @@ Beyond search, our platform allows enterprises to create custom apps and AI agen
 
 ## Tech Stack
 ### Frontend
-- **React** - Component-based UI library
+- **Next.js** – App Router UI (client-rendered React)
 - **TypeScript** - Strongly typed JavaScript superset
-- **Material UI** - Prebuilt React UI components
+- **Radix UI Themes** - Accessible component primitives and styling
 - **Zod** – Schema validation and parsing
 - **React Hook Form** – Flexible form state management
 
@@ -246,11 +246,11 @@ cd pipeshub-ai/deployment/docker-compose
 > _(Required for webhook notifications and real-time updates)_
 > Refer to env.template
 
-# 🚀 Start the development deployment with build
-docker compose -f docker-compose.dev.yml -p pipeshub-ai up --build -d
+# 🚀 Start the local build deployment
+docker compose -f docker-compose.build.neo4j.yml -p pipeshub-ai up --build -d
 
 # 🛑 To stop the services
-docker compose -f docker-compose.dev.yml -p pipeshub-ai down
+docker compose -f docker-compose.build.neo4j.yml -p pipeshub-ai down
 ```
 
 ## MCP Server

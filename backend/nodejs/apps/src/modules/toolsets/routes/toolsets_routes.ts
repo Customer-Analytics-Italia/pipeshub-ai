@@ -190,6 +190,20 @@ const updateUserToolsetInstanceSchema = z.object({
   }),
 });
 
+/**
+ * Schema for updating agent's credentials for a toolset instance.
+ * Auth fields are toolset-schema-defined (dynamic keys); do not restrict to a fixed set.
+ */
+const updateAgentToolsetInstanceSchema = z.object({
+  body: z.object({
+    auth: z.record(z.string(), z.any()),
+  }),
+  params: z.object({
+    instanceId: z.string().min(1, 'Instance ID is required'),
+    agentKey: z.string().min(1, 'Agent Key is required'),
+  }),
+});
+
 
 /**
  * Schema for getting my toolsets.
@@ -208,6 +222,8 @@ const getMyToolsetsSchema = z.object({
     includeRegistry: z
       .preprocess((arg) => arg === 'true', z.boolean())
       .optional(),
+    /** When set, only instances for this toolset type (forwarded to Python). */
+    toolsetType: z.string().optional(),
     authStatus: z
       .enum(['authenticated', 'not-authenticated'])
       .optional(),
@@ -216,9 +232,7 @@ const getMyToolsetsSchema = z.object({
 
 /**
  * Schema for getting agent-scoped toolsets (service account agents).
- * Same shape as getMyToolsetsSchema but without authStatus — agent endpoints
- * return all instances merged with agent-level auth status without server-side
- * filtering by auth state (the UI handles that client-side).
+ * Same pagination/search/registry options as my-toolsets; no authStatus filter on agent list.
  */
 const getAgentToolsetsSchema = z.object({
   query: z.object({
@@ -232,6 +246,7 @@ const getAgentToolsetsSchema = z.object({
     includeRegistry: z
       .preprocess((arg) => arg === 'true', z.boolean())
       .optional(),
+    toolsetType: z.string().optional(),
   }),
 });
 

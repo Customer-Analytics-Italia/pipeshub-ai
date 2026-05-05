@@ -80,6 +80,7 @@ def _make_tx_store():
     tx_store.batch_upsert_record_groups = AsyncMock()
     tx_store.create_record_group_relation = AsyncMock()
     tx_store.create_record_relation = AsyncMock()
+    tx_store.batch_upsert_record_relations = AsyncMock()
     tx_store.get_record_by_key = AsyncMock(return_value=None)
     tx_store.batch_upsert_nodes = AsyncMock()
     tx_store.get_user_by_email = AsyncMock(return_value=None)
@@ -126,25 +127,25 @@ class TestInitialize:
         logger = MagicMock()
         data_store = MagicMock()
         config_svc = AsyncMock()
-        config_svc.get_config = AsyncMock(return_value={
-            "brokers": "broker1:9092,broker2:9092",
-            "client_id": "test",
-            "ssl": False,
-            "sasl": None,
-        })
 
         proc = DataSourceEntitiesProcessor(logger, data_store, config_svc)
 
         tx_store = _make_tx_store()
-        # Set up context manager mock
         ctx = AsyncMock()
         ctx.__aenter__ = AsyncMock(return_value=tx_store)
         ctx.__aexit__ = AsyncMock(return_value=False)
         data_store.transaction.return_value = ctx
 
-        with patch(
-            "app.connectors.core.base.data_processor.data_source_entities_processor.MessagingFactory"
-        ) as MockFactory:
+        with (
+            patch(
+                "app.services.messaging.utils.MessagingUtils.create_producer_config_from_service",
+                new_callable=AsyncMock,
+                return_value=MagicMock(),
+            ),
+            patch(
+                "app.connectors.core.base.data_processor.data_source_entities_processor.MessagingFactory"
+            ) as MockFactory,
+        ):
             mock_producer = AsyncMock()
             MockFactory.create_producer.return_value = mock_producer
 
@@ -159,12 +160,6 @@ class TestInitialize:
         logger = MagicMock()
         data_store = MagicMock()
         config_svc = AsyncMock()
-        config_svc.get_config = AsyncMock(return_value={
-            "brokers": "broker1:9092",
-            "client_id": "test",
-            "ssl": False,
-            "sasl": None,
-        })
 
         proc = DataSourceEntitiesProcessor(logger, data_store, config_svc)
 
@@ -175,9 +170,16 @@ class TestInitialize:
         ctx.__aexit__ = AsyncMock(return_value=False)
         data_store.transaction.return_value = ctx
 
-        with patch(
-            "app.connectors.core.base.data_processor.data_source_entities_processor.MessagingFactory"
-        ) as MockFactory:
+        with (
+            patch(
+                "app.services.messaging.utils.MessagingUtils.create_producer_config_from_service",
+                new_callable=AsyncMock,
+                return_value=MagicMock(),
+            ),
+            patch(
+                "app.connectors.core.base.data_processor.data_source_entities_processor.MessagingFactory"
+            ) as MockFactory,
+        ):
             mock_producer = AsyncMock()
             MockFactory.create_producer.return_value = mock_producer
 
@@ -190,12 +192,6 @@ class TestInitialize:
         logger = MagicMock()
         data_store = MagicMock()
         config_svc = AsyncMock()
-        config_svc.get_config = AsyncMock(return_value={
-            "bootstrap_servers": ["broker1:9092"],
-            "client_id": "test",
-            "ssl": False,
-            "sasl": None,
-        })
 
         proc = DataSourceEntitiesProcessor(logger, data_store, config_svc)
 
@@ -205,9 +201,16 @@ class TestInitialize:
         ctx.__aexit__ = AsyncMock(return_value=False)
         data_store.transaction.return_value = ctx
 
-        with patch(
-            "app.connectors.core.base.data_processor.data_source_entities_processor.MessagingFactory"
-        ) as MockFactory:
+        with (
+            patch(
+                "app.services.messaging.utils.MessagingUtils.create_producer_config_from_service",
+                new_callable=AsyncMock,
+                return_value=MagicMock(),
+            ),
+            patch(
+                "app.connectors.core.base.data_processor.data_source_entities_processor.MessagingFactory"
+            ) as MockFactory,
+        ):
             mock_producer = AsyncMock()
             MockFactory.create_producer.return_value = mock_producer
 
@@ -1358,7 +1361,7 @@ class TestHandleRelatedExternalRecords:
 
         await proc._handle_related_external_records(record, [rel_ext], tx_store)
 
-        tx_store.create_record_relation.assert_awaited()
+        tx_store.batch_upsert_record_relations.assert_awaited()
 
     @pytest.mark.asyncio
     async def test_creates_placeholder_for_missing_related_record(self):

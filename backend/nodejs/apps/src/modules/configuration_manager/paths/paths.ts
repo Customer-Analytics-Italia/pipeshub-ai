@@ -36,6 +36,7 @@ export const configPaths = {
     oauth: '/services/auth/oauth',
   },
   aiModels: '/services/aiModels',
+  webSearch: '/services/webSearch',
   slackBot: '/services/slackBot',
   db: {
     mongodb: '/services/mongodb',
@@ -68,4 +69,5 @@ export const configPaths = {
   platform: {
     settings: '/services/platform/settings',
   },
+  deployment: '/services/deployment',
 };

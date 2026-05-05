@@ -24,7 +24,7 @@ from app.agents.actions.retrieval.retrieval import (
     RetrievalToolOutput,
     _normalize_list_param,
 )
-
+from app.utils.chat_helpers import CitationRefMapper
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -226,12 +226,15 @@ class TestMultimodalLLMDetection:
             "app.agents.actions.retrieval.retrieval.get_flattened_results",
             new_callable=AsyncMock,
             return_value=[{"content": "flat"}],
-        ) as mock_flatten:
+        ) as mock_flatten, patch(
+            "app.agents.actions.retrieval.retrieval.BlobStorage",
+        ), patch(
+            "app.agents.actions.retrieval.retrieval.build_message_content_array",
+            return_value=([[{"type": "text", "text": "record content"}]], CitationRefMapper()),
+        ):
             r = Retrieval(state=state)
             result = await r.search_internal_knowledge(query="test")
-            parsed = json.loads(result)
-            assert parsed["status"] == "success"
-            # Verify get_flattened_results was called
+            assert "Retrieved" in result
             mock_flatten.assert_awaited_once()
 
     @pytest.mark.asyncio
@@ -256,11 +259,15 @@ class TestMultimodalLLMDetection:
             "app.agents.actions.retrieval.retrieval.get_flattened_results",
             new_callable=AsyncMock,
             return_value=[{"content": "flat"}],
+        ), patch(
+            "app.agents.actions.retrieval.retrieval.BlobStorage",
+        ), patch(
+            "app.agents.actions.retrieval.retrieval.build_message_content_array",
+            return_value=([[{"type": "text", "text": "record content"}]], CitationRefMapper()),
         ):
             r = Retrieval(state=state)
             result = await r.search_internal_knowledge(query="test")
-            parsed = json.loads(result)
-            assert parsed["status"] == "success"
+            assert "Retrieved" in result
 
 
 # ============================================================================
@@ -287,13 +294,16 @@ class TestFlattenedResultsEmpty:
             "app.agents.actions.retrieval.retrieval.get_flattened_results",
             new_callable=AsyncMock,
             return_value=[],  # empty
+        ), patch(
+            "app.agents.actions.retrieval.retrieval.BlobStorage",
+        ), patch(
+            "app.agents.actions.retrieval.retrieval.build_message_content_array",
+            return_value=([[{"type": "text", "text": "record content"}]], CitationRefMapper()),
         ):
             r = Retrieval(state=state)
             result = await r.search_internal_knowledge(query="test")
-            parsed = json.loads(result)
-            assert parsed["status"] == "success"
-            # Should use search_results since flattened is empty
-            assert len(parsed["final_results"]) == 1
+            assert "Retrieved" in result
+            assert "1" in result
 
 
 # ============================================================================
@@ -332,15 +342,57 @@ class TestNoFilterIdsProvided:
         retrieval_service.search_with_filters = AsyncMock(
             return_value={"status_code": 200, "searchResults": [], "virtual_to_record_map": {}}
         )
+        # For non-placeholder agents, broad search should use curated filters.
         state = _make_state(
             retrieval_service=retrieval_service,
             filters={"apps": ["app-1"], "kb": ["kb-1"]},
+            apps=["app-from-knowledge"],
+            kb=["kb-from-knowledge"],
         )
         r = Retrieval(state=state)
         await r.search_internal_knowledge(query="test")
         call_kwargs = retrieval_service.search_with_filters.call_args[1]
         assert call_kwargs["filter_groups"]["apps"] == ["app-1"]
         assert call_kwargs["filter_groups"]["kb"] == ["kb-1"]
+
+    @pytest.mark.asyncio
+    async def test_placeholder_no_ids_uses_state_apps_and_kb(self):
+        """Placeholder agents should broaden to state apps/kb instead of filters."""
+        retrieval_service = AsyncMock()
+        retrieval_service.search_with_filters = AsyncMock(
+            return_value={"status_code": 200, "searchResults": [], "virtual_to_record_map": {}}
+        )
+        state = _make_state(
+            retrieval_service=retrieval_service,
+            filters={"apps": ["curated-app"], "kb": ["curated-kb"]},
+            apps=["a1", "a2"],
+            kb=["k1", "k2", "k3"],
+            is_placeholder_agent=True,
+        )
+        r = Retrieval(state=state)
+        await r.search_internal_knowledge(query="test")
+        call_kwargs = retrieval_service.search_with_filters.call_args[1]
+        assert set(call_kwargs["filter_groups"]["apps"]) == {"a1", "a2"}
+        assert set(call_kwargs["filter_groups"]["kb"]) == {"k1", "k2", "k3"}
+
+    @pytest.mark.asyncio
+    async def test_placeholder_limit_uses_state_scope_counts(self):
+        """Placeholder adjusted limit should use state apps/kb count."""
+        retrieval_service = AsyncMock()
+        retrieval_service.search_with_filters = AsyncMock(
+            return_value={"status_code": 200, "searchResults": [], "virtual_to_record_map": {}}
+        )
+        state = _make_state(
+            retrieval_service=retrieval_service,
+            filters={"apps": [], "kb": []},
+            apps=["a1", "a2"],
+            kb=["k1", "k2", "k3"],
+            is_placeholder_agent=True,
+        )
+        r = Retrieval(state=state)
+        await r.search_internal_knowledge(query="test")
+        call_kwargs = retrieval_service.search_with_filters.call_args[1]
+        assert call_kwargs["limit"] == 100 // 5
 
 
 # ============================================================================
@@ -374,39 +426,42 @@ class TestExceptionFallbackLogger:
 # ============================================================================
 
 
-class TestTopKUsedWhenLimitNone:
+class TestInternalLimitComputation:
     @pytest.mark.asyncio
-    async def test_top_k_used_when_limit_none(self):
-        """When limit is None, top_k is used."""
+    async def test_limit_computed_from_base(self):
+        """Limit is computed internally from base_limit (50), capped at 100."""
         retrieval_service = AsyncMock()
         retrieval_service.search_with_filters = AsyncMock(
             return_value={"status_code": 200, "searchResults": [], "virtual_to_record_map": {}}
         )
         state = _make_state(retrieval_service=retrieval_service)
         r = Retrieval(state=state)
-        await r.search_internal_knowledge(query="test", limit=None, top_k=30)
+        await r.search_internal_knowledge(query="test")
         call_kwargs = retrieval_service.search_with_filters.call_args[1]
-        assert call_kwargs["limit"] == 30
+        assert call_kwargs["limit"] <= 100
 
 
 # ============================================================================
-# search_internal_knowledge: state limit used as fallback
+# search_internal_knowledge: limit adjusted by agent scope size
 # ============================================================================
 
 
-class TestStateLimitFallback:
+class TestLimitAdjustedByScope:
     @pytest.mark.asyncio
-    async def test_state_limit_used_when_both_none(self):
-        """When both limit and top_k are None, state limit is used."""
+    async def test_limit_divided_by_scope_count(self):
+        """When agent has both apps and kbs, limit is divided by total count."""
         retrieval_service = AsyncMock()
         retrieval_service.search_with_filters = AsyncMock(
             return_value={"status_code": 200, "searchResults": [], "virtual_to_record_map": {}}
         )
-        state = _make_state(retrieval_service=retrieval_service, limit=35)
+        state = _make_state(
+            retrieval_service=retrieval_service,
+            filters={"apps": ["a1", "a2"], "kb": ["k1", "k2", "k3"]},
+        )
         r = Retrieval(state=state)
-        await r.search_internal_knowledge(query="test", limit=None, top_k=None)
+        await r.search_internal_knowledge(query="test")
         call_kwargs = retrieval_service.search_with_filters.call_args[1]
-        assert call_kwargs["limit"] == 35
+        assert call_kwargs["limit"] == 100 // 5
 
 
 # ============================================================================

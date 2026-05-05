@@ -150,6 +150,7 @@ class TestVectorStoreApply:
 
         ctx = MagicMock()
         ctx.record = record
+        ctx.reconciliation_context = None
 
         result = await vs.apply(ctx)
 
@@ -159,6 +160,8 @@ class TestVectorStoreApply:
             "rec-1",
             "vr-1",
             "application/pdf",
+            block_ids_to_delete=None,
+            is_reconciliation=False,
         )
         assert result is True
 
@@ -177,6 +180,7 @@ class TestVectorStoreApply:
 
         ctx = MagicMock()
         ctx.record = record
+        ctx.reconciliation_context = None
 
         with pytest.raises(Exception, match="indexing failed"):
             await vs.apply(ctx)
@@ -197,6 +201,7 @@ class TestVectorStoreApply:
 
         ctx = MagicMock()
         ctx.record = record
+        ctx.reconciliation_context = None
 
         await vs.apply(ctx)
 
@@ -206,6 +211,8 @@ class TestVectorStoreApply:
             "specific-rec-id",
             "specific-vr-id",
             "image/png",
+            block_ids_to_delete=None,
+            is_reconciliation=False,
         )
 
 
@@ -410,11 +417,11 @@ class TestDeleteEmbeddings:
         """Deletes points from vector store."""
         vs = _make_vectorstore()
         vs.vector_db_service.filter_collection = AsyncMock(return_value={"filter": {}})
-        vs.vector_db_service.delete_points = MagicMock()
+        vs.vector_db_service.delete_points = AsyncMock()
 
         await vs.delete_embeddings("vr-1")
 
-        vs.vector_db_service.delete_points.assert_called_once()
+        vs.vector_db_service.delete_points.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_error_raises_embedding_error(self):
@@ -504,22 +511,22 @@ class TestStoreImagePoints:
     async def test_stores_points(self):
         """Stores points in vector DB."""
         vs = _make_vectorstore()
-        vs.vector_db_service.upsert_points = MagicMock()
+        vs.vector_db_service.upsert_points = AsyncMock()
 
         mock_point = MagicMock()
         await vs._store_image_points([mock_point])
 
-        vs.vector_db_service.upsert_points.assert_called_once()
+        vs.vector_db_service.upsert_points.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_empty_points_logs(self):
         """Empty points list logs but doesn't upsert."""
         vs = _make_vectorstore()
-        vs.vector_db_service.upsert_points = MagicMock()
+        vs.vector_db_service.upsert_points = AsyncMock()
 
         await vs._store_image_points([])
 
-        vs.vector_db_service.upsert_points.assert_not_called()
+        vs.vector_db_service.upsert_points.assert_not_awaited()
         vs.logger.info.assert_called()
 
 
@@ -926,9 +933,9 @@ class TestIndexDocuments:
 
     @pytest.mark.asyncio
     async def test_create_embeddings_failure_raises(self):
-        """Raises EmbeddingError when _create_embeddings fails."""
+        """Raises IndexingError when _create_embeddings raises an unknown exception."""
         from app.models.blocks import Block, BlocksContainer
-        from app.exceptions.indexing_exceptions import EmbeddingError
+        from app.exceptions.indexing_exceptions import IndexingError
         vs = _make_vectorstore()
         vs.get_embedding_model_instance = AsyncMock(return_value=False)
         vs._create_embeddings = AsyncMock(side_effect=RuntimeError("embed fail"))
@@ -939,7 +946,7 @@ class TestIndexDocuments:
 
         with patch("app.modules.transformers.vectorstore.get_llm", new_callable=AsyncMock) as mock_llm:
             mock_llm.return_value = (MagicMock(), {"isMultimodal": False})
-            with pytest.raises(EmbeddingError):
+            with pytest.raises(IndexingError, match="Unexpected error during indexing"):
                 await vs.index_documents(container, "org-1", "rec-1", "vr-1", "text/plain")
 
     @pytest.mark.asyncio
@@ -1099,6 +1106,7 @@ class TestApply:
         mock_ctx.record.block_containers = MagicMock()
         mock_ctx.record.org_id = "org-1"
         mock_ctx.record.mime_type = "text/plain"
+        mock_ctx.reconciliation_context = None
 
         result = await vs.apply(mock_ctx)
 
@@ -1109,6 +1117,8 @@ class TestApply:
             "rec-1",
             "vr-1",
             "text/plain",
+            block_ids_to_delete=None,
+            is_reconciliation=False,
         )
 
 
@@ -1433,19 +1443,19 @@ class TestStoreImagePoints:
         """Should upsert points when list is non-empty."""
         import asyncio
         vs = _make_vectorstore()
-        vs.vector_db_service.upsert_points = MagicMock()
+        vs.vector_db_service.upsert_points = AsyncMock()
 
         mock_point = MagicMock()
         await vs._store_image_points([mock_point])
-        vs.vector_db_service.upsert_points.assert_called_once()
+        vs.vector_db_service.upsert_points.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_empty_points_skipped(self):
         """Should log and skip when no points to upsert."""
         vs = _make_vectorstore()
-        vs.vector_db_service.upsert_points = MagicMock()
+        vs.vector_db_service.upsert_points = AsyncMock()
         await vs._store_image_points([])
-        vs.vector_db_service.upsert_points.assert_not_called()
+        vs.vector_db_service.upsert_points.assert_not_awaited()
 
 
 # ===================================================================
@@ -1761,8 +1771,8 @@ class TestIndexDocumentsAdditional:
 
     @pytest.mark.asyncio
     async def test_embedding_creation_failure_raises(self):
-        """When _create_embeddings fails, should raise EmbeddingError."""
-        from app.exceptions.indexing_exceptions import EmbeddingError
+        """When _create_embeddings raises an unknown exception, index_documents wraps it in IndexingError."""
+        from app.exceptions.indexing_exceptions import IndexingError
         from app.models.blocks import Block, BlocksContainer
         vs = _make_vectorstore()
         vs.get_embedding_model_instance = AsyncMock(return_value=False)
@@ -1774,7 +1784,7 @@ class TestIndexDocumentsAdditional:
 
         with patch("app.modules.transformers.vectorstore.get_llm", new_callable=AsyncMock) as mock_llm:
             mock_llm.return_value = (MagicMock(), {"isMultimodal": False})
-            with pytest.raises(EmbeddingError, match="Failed to create or store embeddings"):
+            with pytest.raises(IndexingError, match="Unexpected error during indexing"):
                 await vs.index_documents(container, "org-1", "rec-1", "vr-1", "text/plain")
 
 

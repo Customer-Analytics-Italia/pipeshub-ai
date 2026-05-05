@@ -99,6 +99,24 @@ docker run -d --name etcd-server --restart always `
 docker run -e ARANGO_ROOT_PASSWORD=your_password -p 8529:8529 --name arango --restart always -d arangodb:3.12.4
 ```
 
+**Neo4j Desktop (instead of ArangoDB):** PipesHub can use **Neo4j** as the graph database (`DATA_STORE=neo4j`) instead of ArangoDB. This is useful if you prefer a local GUI and do not want the ArangoDB container.
+
+1. Install [Neo4j Desktop](https://neo4j.com/download/), create a **local DBMS**, set its password, and **Start** it.
+2. Leave the default Bolt listener on **localhost:7687** (or note the host/port shown in Desktop if you changed them).
+3. **Do not** start the ArangoDB Docker container above when using Neo4j.
+4. In `backend/.env` (the template you copy into `backend/nodejs/apps/.env` and `backend/python/.env`), set at least:
+   ```bash
+   DATA_STORE=neo4j
+   NEO4J_URI=bolt://localhost:7687
+   NEO4J_USERNAME=neo4j
+   NEO4J_PASSWORD=<same password as your DBMS>
+   NEO4J_DATABASE=neo4j
+   ```
+   The Python services read `DATA_STORE` and write `dataStoreType` into the KV store (etcd/Redis) on startup; the Node.js API uses that for health checks and treats `NEO4J_*` as the live Neo4j connection.
+5. Start the **connectors** Python service (`python -m app.connectors_main`) before or with the rest of the stack so deployment metadata stays consistent. If you already bootstrapped against ArangoDB on the same etcd data, reset etcd or the deployment key in KV store before switching graph backends to avoid mismatched state.
+
+For a full stack in Docker with Neo4j instead of ArangoDB, see `docker-compose.build.neo4j.yml` in `deployment/docker-compose/` (documented in the repository `README.md`).
+
 **MongoDB:** (Password must match with .env MONGO URI)
 
 Bash:
@@ -197,16 +215,16 @@ python -m app.docling_main
 cd frontend
 cp env.template .env  # Modify port if Node.js backend uses a different one
 npm install
-npm run dev
+PORT=3001 npm run dev
 ```
 
-Then open your browser to the displayed URL (typically http://localhost:3000).
+Then open your browser to the displayed URL (typically `http://localhost:3001` when using `PORT=3001`; Next.js defaults to port 3000 if `PORT` is unset).
 
 ## Project Architecture
 
 Our project consists of three main components:
 
-1. **Frontend**: React/Next.js application for the user interface
+1. **Frontend**: Next.js application for the user interface
 2. **Node.js Backend**: Handles API requests, authentication, and business logic
 3. **Python Services**: Three microservices for:
    - Connectors: Handles data source connections
@@ -252,7 +270,7 @@ Our project consists of three main components:
 
 ### Running Node.js Unit Tests
 
-Tests use **Mocha** as the test runner with **c8** for code coverage. Test files are located in `backend/nodejs/apps/tests/` and follow the `*.test.ts` naming convention.
+Tests use **Mocha** as the test runner with **c8** for code coverage. Test files are located in `backend/nodejs/apps/tests/` and follow the `*.test.ts` naming convention. See [`backend/nodejs/apps/tests/README.md`](backend/nodejs/apps/tests/README.md) for full details.
 
 ```bash
 cd backend/nodejs/apps
@@ -272,7 +290,7 @@ npx mocha --require ts-node/register tests/libs/utils/password.utils.test.ts
 
 ### Running Python Unit Tests
 
-Tests use **pytest** and are located in `backend/python/tests/`. Test files follow the `test_*.py` naming convention.
+Tests use **pytest** and are located in `backend/python/tests/`. Test files follow the `test_*.py` naming convention. See [`backend/python/tests/README.md`](backend/python/tests/README.md) for full details.
 
 ```bash
 cd backend/python
@@ -299,6 +317,174 @@ pytest --cov=app --cov-report=term-missing
 # Run tests in parallel (requires pytest-xdist)
 pytest -n auto
 ```
+
+### Running Frontend E2E Tests (Playwright)
+
+The frontend (`frontend/`) uses [Playwright](https://playwright.dev/) for end-to-end testing. Tests cover authentication, navigation, workspace settings, entity CRUD (users, groups, teams), chat, and knowledge base pages. **Authoritative E2E details** live in [`frontend/tests/e2e/README.md`](frontend/tests/e2e/README.md); the following is a contributor-oriented summary.
+
+#### Prerequisites
+
+1. Install dependencies (includes `@playwright/test`):
+   ```bash
+   cd frontend
+   npm install
+   ```
+
+2. Install Playwright browsers:
+   ```bash
+   npx playwright install chromium
+   ```
+
+3. Create a `.env.test` file from the template and fill in test credentials:
+   ```bash
+   cp .env.test.example .env.test
+   ```
+
+   Required variables:
+   | Variable | Description |
+   |----------|-------------|
+   | `TEST_USER_EMAIL` | Email of an existing admin user |
+   | `TEST_USER_PASSWORD` | Password for that user |
+   | `BASE_URL` | Where Playwright opens the app (default in config: `http://localhost:3001`) |
+   | `NEXT_PUBLIC_API_BASE_URL` | Backend URL for API calls (seeding/fixtures); defaults to `http://localhost:3000` in fixtures when unset |
+
+#### Running E2E Tests
+
+All commands below run from the `frontend/` directory.
+
+| Command | Description |
+|---------|-------------|
+| `npm run test:e2e` | Run all tests (starts dev server automatically) |
+| `npm run test:e2e:ui` | Open Playwright UI for interactive debugging |
+| `npm run test:e2e:headed` | Run tests in a visible browser |
+| `npm run test:e2e:seed` | Seed bulk test data (30 users, 30 groups, 30 teams) |
+| `npm run test:e2e:cleanup` | Delete all seeded test data |
+| `npm run test:e2e:users` | Run only user-related tests |
+| `npm run test:e2e:groups` | Run only group-related tests |
+| `npm run test:e2e:teams` | Run only team-related tests |
+| `npm run test:e2e:report` | Open the HTML test report |
+| `npm run test:e2e:coverage` | Run all tests with V8 code coverage |
+| `npm run test:e2e:coverage-report` | Open the coverage HTML report |
+
+#### Code Coverage
+
+Run `npm run test:e2e:coverage` to collect V8 code coverage. Reports are generated in `coverage/e2e/` with V8, LCOV, and console summary formats. Open the HTML report with `npm run test:e2e:coverage-report`.
+
+#### Debugging & Verbose Output
+
+To watch test execution in a visible browser and capture full traces (including passing tests):
+
+```bash
+# Visible browser + trace for every test
+npx playwright test --headed --trace on
+
+# Slow motion — 1 second pause between each action
+npx playwright test --headed --trace on --slow-mo=1000
+
+# Record video of every test
+npx playwright test --headed --video on
+
+# Screenshot after every test (pass or fail)
+npx playwright test --screenshot on
+```
+
+| Flag | What it does |
+|------|-------------|
+| `--headed` | Opens a visible browser window instead of running headless |
+| `--trace on` | Records a trace for every test (default only records on first retry) |
+| `--slow-mo=N` | Adds N milliseconds pause between each Playwright action |
+| `--video on` | Records a video of every test run |
+| `--screenshot on` | Takes a screenshot after every test (not just failures) |
+
+**Interactive UI mode** (recommended for debugging):
+
+```bash
+npm run test:e2e:ui
+```
+
+This opens Playwright's built-in UI with a live browser, action timeline, and DOM snapshots you can step through.
+
+**Viewing traces and reports after a run:**
+
+```bash
+# Open the HTML report — click any test to see its trace
+npx playwright show-report
+
+# Open a specific trace file directly
+npx playwright show-trace test-results/<test-folder>/trace.zip
+```
+
+#### E2E Test Projects
+
+Playwright is configured with four projects that run in order:
+
+1. **setup** — Logs in via the browser and saves auth state to `.auth/user.json`.
+2. **seed** — Seeds bulk data using a mix of UI interactions and API calls. Depends on `setup`.
+3. **authenticated** — All feature tests that use the saved auth state. Depends on `setup`.
+4. **unauthenticated** — Login page tests that run without saved auth.
+
+#### E2E Directory Structure
+
+```
+frontend/tests/e2e/
+├── setup/           # Auth setup (login + save storageState)
+├── fixtures/        # Shared test fixtures (API context, base)
+├── helpers/         # Reusable interaction helpers
+│   ├── login.helper.ts
+│   ├── entity-table.helper.ts
+│   ├── pagination.helper.ts
+│   ├── search.helper.ts
+│   ├── sidebar-form.helper.ts
+│   └── tag-input.helper.ts
+├── seed/            # Data seeding and cleanup
+├── auth/            # Login and logout tests
+├── navigation/      # Routing and sidebar navigation tests
+├── workspace/       # Workspace settings page tests
+├── users/           # Users table, invite, actions, bulk ops
+├── groups/          # Groups table, create, actions
+├── teams/           # Teams table, create, actions
+├── chat/            # Chat interface tests
+└── knowledge-base/  # Knowledge base tests
+```
+
+#### Writing New E2E Tests
+
+- **Authenticated tests** go in a feature folder under `frontend/tests/e2e/` and import from `@playwright/test`. They automatically use the saved auth state.
+- **API-based tests** (seeding, cleanup) import from `../fixtures/api-context.fixture` relative to other specs in `tests/e2e/` (see `seed/` and `setup/`).
+- **Helpers** in `tests/e2e/helpers/` provide reusable functions for common UI interactions (table rows, pagination, search, sidebar forms, tag input).
+
+Example test:
+```typescript
+import { test, expect } from '@playwright/test';
+
+test.describe('My Feature', () => {
+  test('loads the page', async ({ page }) => {
+    await page.goto('/workspace/my-feature/');
+    await expect(page.locator('text="My Feature"')).toBeVisible();
+  });
+});
+```
+
+#### Seed Data Conventions
+
+- Seeded users follow the pattern `e2e-user-XXXX@e2etest.pipeshub.local`
+- Seeded groups are named `E2E Group XXX`
+- Seeded teams are named `E2E Team XXXX`
+- Always run `npm run test:e2e:cleanup` after seeded test runs to remove test data
+
+#### E2E CI Notes
+
+In CI, set the environment variable `CI=true` to enable:
+- Retries (2 attempts per test)
+- Single worker (sequential execution)
+- Fresh dev server (no reuse)
+
+#### E2E Artifacts
+
+The following are generated during test runs and are gitignored:
+- `.auth/` — Saved browser auth state
+- `test-results/` — Test artifacts (screenshots, traces)
+- `playwright-report/` — HTML report
 
 ## Documentation
 
