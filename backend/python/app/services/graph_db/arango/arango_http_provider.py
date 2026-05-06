@@ -17,7 +17,7 @@ import unicodedata
 import uuid
 from collections import defaultdict
 from logging import Logger
-from typing import Any, Optional
+from typing import Any, Dict, Optional
 
 from fastapi import Request
 from app.config.configuration_service import ConfigurationService
@@ -60,10 +60,12 @@ from app.schema.arango.documents import (
     agent_template_schema,
     app_role_schema,
     app_schema,
+    code_file_record_schema,
     comment_record_schema,
     deal_record_schema,
     department_schema,
     file_record_schema,
+    knowledge_schema,
     link_record_schema,
     mail_record_schema,
     meeting_record_schema,
@@ -71,19 +73,22 @@ from app.schema.arango.documents import (
     people_schema,
     product_record_schema,
     project_record_schema,
+    pull_request_record_schema,
     record_group_schema,
     record_schema,
     team_schema,
     ticket_record_schema,
+    tool_schema,
+    toolset_schema,
     user_schema,
     webpage_record_schema,
     artifact_record_schema,
-    deal_record_schema,
-    product_record_schema,
     sql_table_record_schema,
     sql_view_record_schema,
 )
 from app.schema.arango.edges import (
+    agent_has_knowledge_schema,
+    agent_has_toolset_schema,
     basic_edge_schema,
     belongs_to_schema,
     contact_schema,
@@ -99,6 +104,7 @@ from app.schema.arango.edges import (
     prospect_schema,
     record_relations_schema,
     sold_in_schema,
+    toolset_has_tool_schema,
     user_app_relation_schema,
     user_drive_relation_schema,
 )
@@ -141,9 +147,13 @@ NODE_COLLECTIONS = [
     (CollectionNames.RECORD_GROUPS.value, record_group_schema),
     (CollectionNames.AGENT_INSTANCES.value, agent_schema),
     (CollectionNames.AGENT_TEMPLATES.value, agent_template_schema),
+    (CollectionNames.AGENT_KNOWLEDGE.value, knowledge_schema),
+    (CollectionNames.AGENT_TOOLSETS.value, toolset_schema),
+    (CollectionNames.AGENT_TOOLS.value, tool_schema),
     (CollectionNames.TICKETS.value, ticket_record_schema),
     (CollectionNames.MEETINGS.value, meeting_record_schema),
     (CollectionNames.PROJECTS.value, project_record_schema),
+    (CollectionNames.PULLREQUESTS.value, pull_request_record_schema),
     (CollectionNames.SYNC_POINTS.value, None),
     (CollectionNames.TEAMS.value, team_schema),
     (CollectionNames.VIRTUAL_RECORD_TO_DOC_ID_MAPPING.value, None),
@@ -151,7 +161,8 @@ NODE_COLLECTIONS = [
     (CollectionNames.DEALS.value, deal_record_schema),
     (CollectionNames.ARTIFACTS.value, artifact_record_schema),
     (CollectionNames.SQL_TABLES.value, sql_table_record_schema),
-    (CollectionNames.SQL_VIEWS.value, sql_view_record_schema)
+    (CollectionNames.SQL_VIEWS.value, sql_view_record_schema),
+    (CollectionNames.CODE_FILES.value, code_file_record_schema),
 ]
 
 EDGE_COLLECTIONS = [
@@ -171,6 +182,9 @@ EDGE_COLLECTIONS = [
     (CollectionNames.BELONGS_TO_RECORD_GROUP.value, basic_edge_schema),
     (CollectionNames.INTER_CATEGORY_RELATIONS.value, basic_edge_schema),
     (CollectionNames.PERMISSION.value, permissions_schema),
+    (CollectionNames.AGENT_HAS_KNOWLEDGE.value, agent_has_knowledge_schema),
+    (CollectionNames.AGENT_HAS_TOOLSET.value, agent_has_toolset_schema),
+    (CollectionNames.TOOLSET_HAS_TOOL.value, toolset_has_tool_schema),
     (CollectionNames.PROSPECT.value, prospect_schema),
     (CollectionNames.CUSTOMER.value, customer_schema),
     (CollectionNames.LEAD.value, lead_schema),
@@ -478,16 +492,29 @@ class ArangoHTTPProvider(IGraphDBProvider):
         try:
             self.logger.info("🚀 Ensuring ArangoDB schema (collections, graph, departments)...")
 
+            # Build a lookup: collection name → schema (None means no validation schema)
+            schema_by_collection: Dict[str, Any] = {}
+            for col_name, col_schema in NODE_COLLECTIONS:
+                schema_by_collection[col_name] = col_schema
+            for col_name, col_schema in EDGE_COLLECTIONS:
+                schema_by_collection[col_name] = col_schema
+
             # 1. Create all collections (node + edge)
             edge_collection_names = {ed["edge_collection"] for ed in EDGE_DEFINITIONS}
             for col in CollectionNames:
                 name = col.value
                 is_edge = name in edge_collection_names
+                col_schema = schema_by_collection.get(name)
                 if not await self.http_client.has_collection(name):
-                    if not await self.http_client.create_collection(name, edge=is_edge):
+                    if not await self.http_client.create_collection(
+                        name, edge=is_edge, schema=col_schema
+                    ):
                         self.logger.warning(f"Failed to create collection '{name}', continuing")
                 else:
                     self.logger.debug(f"Collection '{name}' already exists")
+                    # Ensure schema is applied to pre-existing collections too
+                    if col_schema:
+                        await self.http_client.update_collection_schema(name, col_schema)
 
             # 2. Create knowledge graph if it doesn't exist
             has_knowledge = await self.http_client.has_graph(GraphNames.KNOWLEDGE_GRAPH.value)
@@ -8492,7 +8519,7 @@ class ArangoHTTPProvider(IGraphDBProvider):
         Delete nodes and all their connected edges.
 
         This method dynamically discovers all edge collections in the graph
-        and deletes edges from all of them, matching the behavior of base_arango_service.
+        and deletes edges from all of them.
 
         Steps:
         1. Get all edge collections from the graph definition
