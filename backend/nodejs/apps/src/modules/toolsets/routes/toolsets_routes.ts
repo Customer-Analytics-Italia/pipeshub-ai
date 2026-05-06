@@ -603,7 +603,7 @@ export function createToolsetsRouter(container: Container): Router {
   router.put(
     '/agents/:agentKey/instances/:instanceId/credentials',
     authMiddleware.authenticate,
-    ValidationMiddleware.validate(updateUserToolsetInstanceSchema),
+    ValidationMiddleware.validate(updateAgentToolsetInstanceSchema),
     updateAgentToolsetCredentials(config)
   );
 
