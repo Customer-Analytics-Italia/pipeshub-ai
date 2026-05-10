@@ -4,12 +4,6 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import Runnable, RunnablePassthrough
 
-# Output token caps for /search query transformation. Bound worst-case
-# generation time without clipping typical outputs (rewrite p95 ~30 tokens;
-# expansion p95 ~60 tokens for 2 queries).
-SEARCH_REWRITE_MAX_TOKENS = 64
-SEARCH_EXPANSION_MAX_TOKENS = 128
-
 
 def setup_query_transformation(llm) -> Tuple[Runnable, Runnable]:
     """Setup query rewriting and expansion with async support"""
@@ -38,14 +32,14 @@ def setup_query_transformation(llm) -> Tuple[Runnable, Runnable]:
     rewrite_chain = (
         {"query": RunnablePassthrough()}
         | query_rewrite_prompt
-        | llm.bind(max_tokens=SEARCH_REWRITE_MAX_TOKENS)
+        | llm
         | StrOutputParser()
     )
 
     expansion_chain = (
         {"query": RunnablePassthrough()}
         | query_expansion_prompt
-        | llm.bind(max_tokens=SEARCH_EXPANSION_MAX_TOKENS)
+        | llm
         | StrOutputParser()
     )
 
@@ -71,7 +65,7 @@ def setup_followup_query_transformation(llm) -> Runnable:
     rewrite_chain = (
         {"query": RunnablePassthrough(), "previous_conversations": RunnablePassthrough()}
         | query_rewrite_prompt
-        | llm.bind(max_tokens=SEARCH_REWRITE_MAX_TOKENS)
+        | llm
         | StrOutputParser()
     )
 
