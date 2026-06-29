@@ -41,7 +41,7 @@ jobs:
         uses: docker/metadata-action@v6
         with:
           images: |
-            ${{ env.LOCATION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ vars.GCP_ARTIFACT_REGISTRY }}/pipeshub-ai
+            ${{ env.LOCATION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ vars.GCP_ARTIFACT_REGISTRY }}/pipeshub
           tags: |
             stage-${{ github.ref_name }}-${{ github.sha }}
             latest
