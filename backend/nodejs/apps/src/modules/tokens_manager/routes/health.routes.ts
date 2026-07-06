@@ -247,8 +247,15 @@ export function createHealthRouter(
       }
 
       try {
-        const qdrantUrl = `http://${appConfig.qdrant.host}:${appConfig.qdrant.port}`;
-        const qdrantResp = await axios.get(`${qdrantUrl}/healthz`, { timeout: 3000 });
+        // Use the same transport as the runtime client: a full URL takes
+        // precedence, otherwise derive the scheme from `https`. Hardcoding
+        // `http://` here made TLS/cloud Qdrant report a false "unhealthy".
+        const q = appConfig.qdrant;
+        const qdrantBase = (q.url || `${q.https ? 'https' : 'http'}://${q.host}:${q.port}`).replace(/\/+$/, '');
+        const qdrantResp = await axios.get(`${qdrantBase}/healthz`, {
+          timeout: 3000,
+          headers: q.apiKey ? { 'api-key': q.apiKey } : undefined,
+        });
         services.vectorDb = qdrantResp.status === 200 ? 'healthy' : 'unhealthy';
         if (qdrantResp.status !== 200) overallHealthy = false;
       } catch (error) {
