@@ -88,22 +88,37 @@ class QdrantService(IVectorDBService):
             if not qdrant_config:
                 raise ValueError("Qdrant configuration not found")
 
-            self.client = AsyncQdrantClient(
-                host=qdrant_config.get("host"), # type: ignore
-                port=qdrant_config.get("port"), # type: ignore
-                api_key=qdrant_config.get("apiKey"), # type: ignore
-                prefer_grpc=True,
-                https=False,
-                timeout=300,  # Increased timeout for large batches
-                grpc_options={
-                    'grpc.max_send_message_length': 64 * 1024 * 1024,  # 64MB
-                    'grpc.max_receive_message_length': 64 * 1024 * 1024,  # 64MB
-                    'grpc.keepalive_time_ms': 30000,
-                    'grpc.keepalive_timeout_ms': 10000,
-                    'grpc.http2.max_pings_without_data': 0,
-                    'grpc.keepalive_permit_without_calls': 1,
-                },
-            )
+            grpc_options = {
+                'grpc.max_send_message_length': 64 * 1024 * 1024,  # 64MB
+                'grpc.max_receive_message_length': 64 * 1024 * 1024,  # 64MB
+                'grpc.keepalive_time_ms': 30000,
+                'grpc.keepalive_timeout_ms': 10000,
+                'grpc.http2.max_pings_without_data': 0,
+                'grpc.keepalive_permit_without_calls': 1,
+            }
+            # A full URL (e.g. a Qdrant Cloud endpoint) takes precedence over
+            # host/port/https. For a pasted URL, REST-over-HTTPS is the default
+            # transport, so prefer_grpc defaults to False in that case.
+            qdrant_url = qdrant_config.get("url")
+            if qdrant_url:
+                self.client = AsyncQdrantClient(
+                    url=qdrant_url, # type: ignore
+                    api_key=qdrant_config.get("apiKey"), # type: ignore
+                    prefer_grpc=qdrant_config.get("preferGrpc", False), # type: ignore
+                    timeout=300,  # Increased timeout for large batches
+                    grpc_options=grpc_options,
+                )
+            else:
+                self.client = AsyncQdrantClient(
+                    host=qdrant_config.get("host"), # type: ignore
+                    port=qdrant_config.get("port"), # type: ignore
+                    grpc_port=qdrant_config.get("grpcPort", 6334), # type: ignore
+                    api_key=qdrant_config.get("apiKey"), # type: ignore
+                    prefer_grpc=qdrant_config.get("preferGrpc", True), # type: ignore
+                    https=qdrant_config.get("https", False), # type: ignore
+                    timeout=300,  # Increased timeout for large batches
+                    grpc_options=grpc_options,
+                )
             logger.info("✅ Connected to Qdrant with async client successfully")
         except Exception as e:
             logger.error(f"❌ Failed to connect to Qdrant with async client: {e}")
@@ -125,22 +140,37 @@ class QdrantService(IVectorDBService):
             if not qdrant_config:
                 raise ValueError("Qdrant configuration not found")
 
-            self.client = QdrantClient(
-                host=qdrant_config.get("host"), # type: ignore
-                port=qdrant_config.get("port"), # type: ignore
-                api_key=qdrant_config.get("apiKey"), # type: ignore
-                prefer_grpc=True,
-                https=False,
-                timeout=300,  # Increased timeout for large batches
-                grpc_options={
-                    'grpc.max_send_message_length': 64 * 1024 * 1024,  # 64MB
-                    'grpc.max_receive_message_length': 64 * 1024 * 1024,  # 64MB
-                    'grpc.keepalive_time_ms': 30000,
-                    'grpc.keepalive_timeout_ms': 10000,
-                    'grpc.http2.max_pings_without_data': 0,
-                    'grpc.keepalive_permit_without_calls': 1,
-                },
-            )
+            grpc_options = {
+                'grpc.max_send_message_length': 64 * 1024 * 1024,  # 64MB
+                'grpc.max_receive_message_length': 64 * 1024 * 1024,  # 64MB
+                'grpc.keepalive_time_ms': 30000,
+                'grpc.keepalive_timeout_ms': 10000,
+                'grpc.http2.max_pings_without_data': 0,
+                'grpc.keepalive_permit_without_calls': 1,
+            }
+            # A full URL (e.g. a Qdrant Cloud endpoint) takes precedence over
+            # host/port/https. For a pasted URL, REST-over-HTTPS is the default
+            # transport, so prefer_grpc defaults to False in that case.
+            qdrant_url = qdrant_config.get("url")
+            if qdrant_url:
+                self.client = QdrantClient(
+                    url=qdrant_url, # type: ignore
+                    api_key=qdrant_config.get("apiKey"), # type: ignore
+                    prefer_grpc=qdrant_config.get("preferGrpc", False), # type: ignore
+                    timeout=300,  # Increased timeout for large batches
+                    grpc_options=grpc_options,
+                )
+            else:
+                self.client = QdrantClient(
+                    host=qdrant_config.get("host"), # type: ignore
+                    port=qdrant_config.get("port"), # type: ignore
+                    grpc_port=qdrant_config.get("grpcPort", 6334), # type: ignore
+                    api_key=qdrant_config.get("apiKey"), # type: ignore
+                    prefer_grpc=qdrant_config.get("preferGrpc", True), # type: ignore
+                    https=qdrant_config.get("https", False), # type: ignore
+                    timeout=300,  # Increased timeout for large batches
+                    grpc_options=grpc_options,
+                )
             logger.info("✅ Connected to Qdrant successfully")
         except Exception as e:
             logger.error(f"❌ Failed to connect to Qdrant: {e}")

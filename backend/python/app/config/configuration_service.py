@@ -139,12 +139,19 @@ class ConfigurationService:
                 }
         elif key == config_node_constants.QDRANT.value:
             # Qdrant configuration fallback
+            qdrant_url = os.getenv("QDRANT_URL")
             qdrant_host = os.getenv("QDRANT_HOST")
-            if qdrant_host:
+            if qdrant_url or qdrant_host:
                 return {
+                    # A full URL (e.g. a Qdrant Cloud endpoint) takes precedence
+                    # over host/port/https in the client.
+                    "url": qdrant_url,
                     "host": qdrant_host,
-                    "grpcPort": int(os.getenv("QDRANT_GRPC_PORT", "6333")),
-                    "apiKey": os.getenv("QDRANT_API_KEY", "qdrant")
+                    "port": int(os.getenv("QDRANT_PORT", "6333")),
+                    "grpcPort": int(os.getenv("QDRANT_GRPC_PORT", "6334")),
+                    "apiKey": os.getenv("QDRANT_API_KEY", "qdrant"),
+                    "https": os.getenv("QDRANT_HTTPS", "false").lower() == "true",
+                    "preferGrpc": os.getenv("QDRANT_PREFER_GRPC", "true").lower() == "true",
                 }
         return None
 
