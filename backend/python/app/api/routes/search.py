@@ -1,4 +1,3 @@
-import asyncio
 from typing import TYPE_CHECKING, Any, Optional
 
 from dependency_injector.wiring import inject
@@ -11,7 +10,6 @@ from app.config.configuration_service import ConfigurationService
 from app.config.constants.service import OAuthScopes
 from app.modules.retrieval.retrieval_service import RetrievalService
 from app.services.graph_db.interface.graph_db_provider import IGraphDBProvider
-from app.utils.query_transform import setup_query_transformation
 
 if TYPE_CHECKING:
     from app.containers.query import QueryAppContainer
@@ -67,43 +65,16 @@ async def search(
         # Extract KB IDs from filters if present
         updated_filters = body.filters
 
-        # --- TEST: query rewrite + expansion DISABILITATI ---
-        # Per ripristinare: togli il commento al blocco sotto e rimuovi `queries = [body.query]`.
-        # llm = retrieval_service.llm
-        # if llm is None:
-        #     llm = await retrieval_service.get_llm_instance()
-        #     if llm is None:
-        #         raise HTTPException(
-        #             status_code=500,
-        #             detail="Failed to initialize LLM service. LLM configuration is missing.",
-        #         )
-        #
-        # # Setup query transformation
-        # rewrite_chain, expansion_chain = setup_query_transformation(llm)
-        #
-        # # Run query transformations in parallel
-        # rewritten_query, expanded_queries = await asyncio.gather(
-        #     rewrite_chain.ainvoke(body.query), expansion_chain.ainvoke(body.query)
-        # )
-        #
-        # logger.debug(f"Rewritten query: {rewritten_query}")
-        # logger.debug(f"Expanded queries: {expanded_queries}")
-        #
-        # expanded_queries_list = [
-        #     q.strip() for q in expanded_queries.split("\n") if q.strip()
-        # ]
-        #
-        # queries = [rewritten_query.strip()] if rewritten_query.strip() else []
-        # queries.extend([q for q in expanded_queries_list if q not in queries])
-        queries = [body.query]
-        # --- fine TEST ---
+        # Expansion is done corpus-side via pseudo-relevance feedback (use_prf),
+        # so this path needs no LLM rewrite/expansion round-trip.
         results = await retrieval_service.search_with_filters(
-            queries=queries,
+            queries=[body.query],
             org_id=request.state.user.get("orgId"),
             user_id=request.state.user.get("userId"),
             limit=body.limit,
             filter_groups=updated_filters,
             knowledge_search=True,
+            use_prf=True,
         )
         custom_status_code = results.get("status_code", 500)
         logger.info(f"Custom status code: {custom_status_code}")
