@@ -64,35 +64,39 @@ async def search(
     try:
         container = request.app.container
         logger = container.logger()
-        llm = retrieval_service.llm
-        if llm is None:
-            llm = await retrieval_service.get_llm_instance()
-            if llm is None:
-                raise HTTPException(
-                    status_code=500,
-                    detail="Failed to initialize LLM service. LLM configuration is missing.",
-                )
-
         # Extract KB IDs from filters if present
         updated_filters = body.filters
 
-        # Setup query transformation
-        rewrite_chain, expansion_chain = setup_query_transformation(llm)
-
-        # Run query transformations in parallel
-        rewritten_query, expanded_queries = await asyncio.gather(
-            rewrite_chain.ainvoke(body.query), expansion_chain.ainvoke(body.query)
-        )
-
-        logger.debug(f"Rewritten query: {rewritten_query}")
-        logger.debug(f"Expanded queries: {expanded_queries}")
-
-        expanded_queries_list = [
-            q.strip() for q in expanded_queries.split("\n") if q.strip()
-        ]
-
-        queries = [rewritten_query.strip()] if rewritten_query.strip() else []
-        queries.extend([q for q in expanded_queries_list if q not in queries])
+        # --- TEST: query rewrite + expansion DISABILITATI ---
+        # Per ripristinare: togli il commento al blocco sotto e rimuovi `queries = [body.query]`.
+        # llm = retrieval_service.llm
+        # if llm is None:
+        #     llm = await retrieval_service.get_llm_instance()
+        #     if llm is None:
+        #         raise HTTPException(
+        #             status_code=500,
+        #             detail="Failed to initialize LLM service. LLM configuration is missing.",
+        #         )
+        #
+        # # Setup query transformation
+        # rewrite_chain, expansion_chain = setup_query_transformation(llm)
+        #
+        # # Run query transformations in parallel
+        # rewritten_query, expanded_queries = await asyncio.gather(
+        #     rewrite_chain.ainvoke(body.query), expansion_chain.ainvoke(body.query)
+        # )
+        #
+        # logger.debug(f"Rewritten query: {rewritten_query}")
+        # logger.debug(f"Expanded queries: {expanded_queries}")
+        #
+        # expanded_queries_list = [
+        #     q.strip() for q in expanded_queries.split("\n") if q.strip()
+        # ]
+        #
+        # queries = [rewritten_query.strip()] if rewritten_query.strip() else []
+        # queries.extend([q for q in expanded_queries_list if q not in queries])
+        queries = [body.query]
+        # --- fine TEST ---
         results = await retrieval_service.search_with_filters(
             queries=queries,
             org_id=request.state.user.get("orgId"),
