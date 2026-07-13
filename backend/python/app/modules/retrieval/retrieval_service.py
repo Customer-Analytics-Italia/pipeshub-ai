@@ -1,5 +1,4 @@
 import asyncio
-import math
 import time
 import traceback
 from typing import Any
@@ -59,14 +58,6 @@ valid_group_labels = [
         GroupType.KEY_VALUE_AREA.value,
         GroupType.TEXT_SECTION.value,
     ]
-
-# Pseudo-relevance feedback (Rocchio) defaults. Query stays dominant (alpha >= beta),
-# feedback set kept small to bound drift. ponytail: module constants for the first
-# measurable version; promote to ConfigurationService if A/B shows they need per-org tuning.
-PRF_K = 5  # feedback documents taken from round-1
-PRF_ALPHA = 1.0  # weight of the original query vector
-PRF_BETA = 0.75  # weight of the feedback centroid
-PRF_SCORE_THRESHOLD = 0.0  # minimum round-1 score for a doc to feed expansion
 
 class RetrievalService:
     def __init__(
@@ -301,14 +292,8 @@ class RetrievalService:
         limit: int = 20,
         virtual_record_ids_from_tool: list[str] | None = None,
         knowledge_search:bool = False,
-        use_prf: bool = False,
     ) -> dict[str, Any]:
-        """Perform semantic search on records the given user may access (graph permission checks).
-
-        ``use_prf`` enables one round of pseudo-relevance-feedback query expansion
-        (see ``_execute_parallel_searches``). Off by default so callers other than
-        ``/search`` keep single-round hybrid retrieval unchanged.
-        """
+        """Perform semantic search on records the given user may access (graph permission checks)."""
 
         try:
             # Get accessible records
@@ -350,7 +335,7 @@ class RetrievalService:
                         must={"orgId": org_id},
                         should={"virtualRecordId": list(accessible_virtual_id_to_record_id.keys())}
                     )
-            search_results = await self._execute_parallel_searches(queries, filter, limit, use_prf=use_prf)
+            search_results = await self._execute_parallel_searches(queries, filter, limit)
 
             if not search_results:
                 self.logger.debug("No search results found")
@@ -685,92 +670,8 @@ class RetrievalService:
             return models.SparseVector(indices=sparse["indices"], values=sparse["values"])
         raise ValueError("Cannot convert sparse embedding to Qdrant SparseVector")
 
-    def _build_hybrid_request(
-        self, dense_vec, sparse_raw, filter, limit, *, with_vectors: bool = False
-    ) -> "models.QueryRequest":
-        """Build one hybrid (dense + sparse, RRF) Qdrant query request."""
-        return models.QueryRequest(
-            prefetch=[
-                models.Prefetch(
-                    query=dense_vec,
-                    using="dense",
-                    limit=limit * 2,  # Fetch more candidates
-                ),
-                models.Prefetch(
-                    query=self.to_qdrant_sparse(sparse_raw),
-                    using="sparse",
-                    limit=limit * 2,
-                ),
-            ],
-            query=models.FusionQuery(fusion=models.Fusion.RRF),  # Reciprocal Rank Fusion
-            with_payload=True,
-            # Return stored vectors only for the PRF feedback round; None keeps the
-            # non-PRF path identical to before (default is no vectors).
-            with_vector=["dense", "sparse"] if with_vectors else None,
-            limit=limit,
-            filter=filter,
-        )
-
-    def _l2_normalized_sparse(self, sparse_raw) -> dict[int, float]:
-        """Convert any sparse vector to an L2-normalized {index: weight} dict.
-
-        BM25 query-term and document-term weights live on different scales, so we
-        normalize each vector before interpolating — otherwise one side dominates.
-        """
-        sv = self.to_qdrant_sparse(sparse_raw)
-        norm = math.sqrt(sum(v * v for v in sv.values)) or 1.0
-        return {int(i): v / norm for i, v in zip(sv.indices, sv.values)}
-
-    def _prf_expand_query(
-        self, dense_q, sparse_q, points, alpha, beta, k, score_threshold
-    ) -> tuple[list, "models.SparseVector"]:
-        """Rocchio-interpolate the query vectors toward the top-k feedback docs.
-
-        Returns the (dense, sparse) vectors for the round-2 search. Falls back to
-        the original query vectors when there is no usable feedback.
-        """
-        feedback = [
-            p
-            for p in points[:k]
-            if (p.score or 0.0) >= score_threshold and isinstance(p.vector, dict)
-        ]
-        if not feedback:
-            return dense_q, self.to_qdrant_sparse(sparse_q)
-
-        # Dense: q' = alpha*q + beta*mean(feedback dense vectors)
-        dense_new = dense_q
-        dense_vecs = [p.vector["dense"] for p in feedback if p.vector.get("dense")]
-        if dense_vecs:
-            dense_mean = [sum(col) / len(dense_vecs) for col in zip(*dense_vecs)]
-            dense_new = [alpha * q + beta * m for q, m in zip(dense_q, dense_mean)]
-
-        # Sparse (BM25): interpolate over L2-normalized term-weight vectors.
-        sparse_new = self.to_qdrant_sparse(sparse_q)
-        sparse_vecs = [p.vector["sparse"] for p in feedback if p.vector.get("sparse")]
-        if sparse_vecs:
-            combined: dict[int, float] = {
-                i: alpha * w for i, w in self._l2_normalized_sparse(sparse_q).items()
-            }
-            for sv in sparse_vecs:
-                for i, w in self._l2_normalized_sparse(sv).items():
-                    combined[i] = combined.get(i, 0.0) + beta * w / len(sparse_vecs)
-            sparse_new = models.SparseVector(
-                indices=list(combined.keys()), values=list(combined.values())
-            )
-
-        return dense_new, sparse_new
-
-    async def _execute_parallel_searches(
-        self, queries, filter, limit, *, use_prf: bool = False
-    ) -> list[dict[str, Any]]:
-        """Execute all searches in parallel using hybrid (dense + sparse) retrieval with RRF fusion.
-
-        When ``use_prf`` is set, each query goes through one round of
-        pseudo-relevance feedback (Rocchio in vector space): round 1 retrieves the
-        top-k docs WITH their stored vectors, the query vectors are interpolated
-        toward that feedback set, and round 2 re-queries with the expanded vectors.
-        No LLM, no reindex.
-        """
+    async def _execute_parallel_searches(self, queries, filter, limit) -> list[dict[str, Any]]:
+        """Execute all searches in parallel using hybrid (dense + sparse) retrieval with RRF fusion."""
         all_results = []
 
         dense_embeddings = await self.get_embedding_model_instance()
@@ -791,8 +692,23 @@ class RetrievalService:
         )
 
         query_requests = [
-            self._build_hybrid_request(
-                dense_embedding, sparse_embedding, filter, limit, with_vectors=use_prf
+            models.QueryRequest(
+                prefetch=[
+                    models.Prefetch(
+                        query=dense_embedding,
+                        using="dense",
+                        limit=limit * 2,  # Fetch more candidates
+                    ),
+                    models.Prefetch(
+                        query=self.to_qdrant_sparse(sparse_embedding),
+                        using="sparse",
+                        limit=limit * 2,
+                    ),
+                ],
+                query=models.FusionQuery(fusion=models.Fusion.RRF),  # Reciprocal Rank Fusion
+                with_payload=True,
+                limit=limit,
+                filter=filter,
             )
             for dense_embedding, sparse_embedding in zip(dense_query_embeddings, sparse_query_embeddings)
         ]
@@ -800,33 +716,6 @@ class RetrievalService:
             collection_name=self.collection_name,
             requests=query_requests,
         )
-
-        if use_prf:
-            # Round 2: expand each query from its own round-1 feedback set and re-query.
-            prf_requests = [
-                self._build_hybrid_request(
-                    *self._prf_expand_query(
-                        dense_embedding,
-                        sparse_embedding,
-                        search_results[idx].points if idx < len(search_results) else [],
-                        PRF_ALPHA,
-                        PRF_BETA,
-                        PRF_K,
-                        PRF_SCORE_THRESHOLD,
-                    ),
-                    filter,
-                    limit,
-                    with_vectors=False,
-                )
-                for idx, (dense_embedding, sparse_embedding) in enumerate(
-                    zip(dense_query_embeddings, sparse_query_embeddings)
-                )
-            ]
-            search_results = await self.vector_db_service.query_nearest_points(
-                collection_name=self.collection_name,
-                requests=prf_requests,
-            )
-
         seen_points = set()
         for r in search_results:
                 points = r.points
