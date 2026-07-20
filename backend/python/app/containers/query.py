@@ -48,7 +48,9 @@ class QueryAppContainer(BaseAppContainer):
     )
     reranker_service = providers.Singleton(
         RerankerService,
-        model_name="BAAI/bge-reranker-base",  # Choose model based on speed/accuracy needs
+        # Multilingual (incl. Italian), Apache-2.0, ONNX for CPU. See
+        # openspec/changes/add-search-reranking.
+        model_name="onnx-community/gte-multilingual-reranker-base",
     )
 
     # Query-specific wiring configuration

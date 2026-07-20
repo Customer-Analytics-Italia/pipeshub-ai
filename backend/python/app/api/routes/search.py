@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from app.api.middlewares.auth import require_scopes
 from app.config.configuration_service import ConfigurationService
 from app.config.constants.service import OAuthScopes
+from app.modules.reranker.reranker import RerankerService
 from app.modules.retrieval.retrieval_service import RetrievalService
 from app.modules.transformers.blob_storage import BlobStorage
 from app.services.graph_db.interface.graph_db_provider import IGraphDBProvider
@@ -32,6 +33,9 @@ class SearchQuery(BaseModel):
     # blocks + document order) instead of raw matched chunks. Off by default so
     # existing /search consumers are unaffected.
     enrich: Optional[bool] = False
+    # On the enrich path, `limit` is the candidate pool and `top_k` is how many
+    # chunks survive reranking and reach the context. Only used when enrich=true.
+    top_k: Optional[int] = 10
 
 
 class SimilarDocumentQuery(BaseModel):
@@ -60,6 +64,11 @@ async def get_config_service(request: Request) -> ConfigurationService:
     return container.config_service()
 
 
+async def get_reranker_service(request: Request) -> RerankerService:
+    container: QueryAppContainer = request.app.container
+    return container.reranker_service()
+
+
 @router.post("/search", dependencies=[Depends(require_scopes(OAuthScopes.SEMANTIC_WRITE))])
 @inject
 async def search(
@@ -68,6 +77,7 @@ async def search(
     retrieval_service: RetrievalService = Depends(get_retrieval_service),
     graph_provider: IGraphDBProvider = Depends(get_graph_provider),
     config_service: ConfigurationService = Depends(get_config_service),
+    reranker_service: RerankerService = Depends(get_reranker_service),
 )-> JSONResponse :
     """Perform semantic search across documents"""
     try:
@@ -117,12 +127,23 @@ async def search(
         # chat flow runs (get_flattened_results + FK-child blocks + document order)
         # so a caller with its own LLM receives the context chat feeds its LLM.
         if body.enrich and custom_status_code == 200 and results.get("searchResults"):
+            # Retrieve wide (limit = candidate pool), rerank with the multilingual
+            # cross-encoder, and keep only top_k — so a low-ranked-but-relevant
+            # chunk surfaces without enriching the whole pool. Skipped when the pool
+            # is already <= top_k.
+            search_hits = results["searchResults"]
+            top_k = body.top_k or 10
+            if len(search_hits) > top_k:
+                search_hits = await reranker_service.rerank(
+                    body.query, search_hits, top_k=top_k
+                )
+
             blob_store = BlobStorage(
                 logger=logger, config_service=config_service, graph_provider=graph_provider
             )
             virtual_record_id_to_result: dict[str, Any] = {}
             flattened_results = await get_flattened_results(
-                results["searchResults"],
+                search_hits,
                 blob_store,
                 org_id,
                 False,  # is_multimodal_llm — text-only context for the external LLM

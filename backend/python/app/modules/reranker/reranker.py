@@ -1,75 +1,97 @@
 import asyncio
 from typing import Any, Dict, List, Optional
 
-import torch
-from sentence_transformers import CrossEncoder
-
 from app.models.blocks import BlockType, GroupType
+
+# Multilingual (incl. Italian), Apache-2.0, small encoder — loaded as ONNX for
+# CPU inference. The `onnx-community` export ships a plain ONNX graph so we avoid
+# `trust_remote_code`. See openspec/changes/add-search-reranking.
+DEFAULT_RERANKER_MODEL = "onnx-community/gte-multilingual-reranker-base"
+_MAX_LENGTH = 512
+_BATCH_SIZE = 16
 
 
 class RerankerService:
-    """Service for reranking retrieval results"""
+    """Reranks retrieval results with a multilingual cross-encoder (ONNX, CPU)."""
 
-    def __init__(self, model_name: str = "cross-encoder/ms-marco-MiniLM-L-6-v2") -> None:
+    def __init__(self, model_name: str = DEFAULT_RERANKER_MODEL) -> None:
         """
-        Initialize the reranker service with a specific model
-
         Args:
-            model_name: Name of the reranker model to use
-                Options include:
-                - "cross-encoder/ms-marco-MiniLM-L-6-v2" (fast)
-                - "BAAI/bge-reranker-base" (balanced)
-                - "BAAI/bge-reranker-large" (more accurate)
+            model_name: an ONNX cross-encoder reranker on HuggingFace. Default is
+                gte-multilingual-reranker-base (Apache-2.0, multilingual), loaded
+                via optimum.onnxruntime for CPU inference.
 
         Note:
-            The underlying CrossEncoder model is NOT loaded here. Loading a
-            reranker model can take minutes on a cold cache (download) plus
-            non-trivial CPU time (weights load), which would block the asyncio
-            event loop if done on construction. We defer the load until the
-            first `rerank()` call and perform it inside `asyncio.to_thread`,
-            serialized with an `asyncio.Lock` so concurrent first callers
-            share a single load.
+            The model is NOT loaded here. Loading (and, on a cold cache,
+            downloading) blocks and would stall the asyncio event loop. We defer
+            the load to the first `rerank()` call, run it in `asyncio.to_thread`,
+            and serialize it with an `asyncio.Lock` so concurrent first callers
+            share a single load. In production the model is baked into the image
+            (see Dockerfile), so the first load is fast.
         """
         self.model_name = model_name
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        self.model: Optional[CrossEncoder] = None
+        self._model = None
+        self._tokenizer = None
         self._model_lock = asyncio.Lock()
 
-    def _load_model_sync(self) -> CrossEncoder:
-        """Blocking load of the CrossEncoder. Runs in a worker thread."""
-        model = CrossEncoder(self.model_name, device=self.device)
-        # For faster inference with larger batch sizes on GPU, use fp16 weights.
-        if self.device == "cuda":
-            model.model = model.model.half()
-        return model
+    def _load_model_sync(self):
+        """Blocking load of the ONNX reranker + tokenizer. Runs in a worker thread."""
+        from optimum.onnxruntime import ORTModelForSequenceClassification
+        from transformers import AutoTokenizer
 
-    async def _ensure_model_loaded(self) -> CrossEncoder:
-        """Lazily load the reranker model on first use, without blocking the event loop."""
-        if self.model is not None:
-            return self.model
+        tokenizer = AutoTokenizer.from_pretrained(self.model_name)
+        # onnx-community exports keep the graph under an `onnx/` subfolder.
+        model = ORTModelForSequenceClassification.from_pretrained(
+            self.model_name, subfolder="onnx"
+        )
+        return model, tokenizer
+
+    async def _ensure_model_loaded(self):
+        """Lazily load the reranker on first use, off the event loop."""
+        if self._model is not None:
+            return self._model, self._tokenizer
         async with self._model_lock:
-            if self.model is None:
-                self.model = await asyncio.to_thread(self._load_model_sync)
-        return self.model
+            if self._model is None:
+                self._model, self._tokenizer = await asyncio.to_thread(self._load_model_sync)
+        return self._model, self._tokenizer
+
+    def _predict_scores_sync(self, model, tokenizer, pairs: List[tuple]) -> List[float]:
+        """Score (query, passage) pairs with the ONNX cross-encoder. CPU-bound."""
+        scores: List[float] = []
+        for start in range(0, len(pairs), _BATCH_SIZE):
+            batch = pairs[start:start + _BATCH_SIZE]
+            inputs = tokenizer(
+                [p[0] for p in batch],
+                [p[1] for p in batch],
+                padding=True,
+                truncation=True,
+                max_length=_MAX_LENGTH,
+                return_tensors="pt",
+            )
+            logits = model(**inputs).logits.reshape(-1)
+            scores.extend(logits.tolist())
+        return scores
 
     async def rerank(
         self, query: str, documents: List[Dict[str, Any]], top_k: Optional[int] = None
     ) -> List[Dict[str, Any]]:
         """
-        Rerank documents based on relevance to the query
+        Rerank documents by relevance to the query.
 
         Args:
-            query: The search query
-            documents: List of document dictionaries from the retriever
-            top_k: Number of top documents to return (None for all)
+            query: the search query
+            documents: retriever result dicts (each with a string ``content``)
+            top_k: number of top documents to return (None for all)
 
         Returns:
-            Reranked list of documents with scores
+            Reranked documents (top_k) with ``reranker_score`` / ``final_score``.
+            On any failure, returns the input order (sliced to top_k) so search
+            degrades gracefully rather than erroring.
         """
         if not documents:
             return []
 
-                # Create document-query pairs for scoring
+        # Create document-query pairs for scoring
         doc_query_pairs = []
         for doc in documents:
             content = doc.get("content", "")
@@ -80,34 +102,32 @@ class RerankerService:
                 elif block_type != BlockType.IMAGE.value:
                     doc_query_pairs.append((query, content))
 
-        # If no valid document-query pairs, return documents as-is
+        # If no valid pairs, return documents as-is (sliced)
         if not doc_query_pairs:
-            # Set default scores for all documents
             for doc in documents:
                 doc["reranker_score"] = 0.0
                 doc["final_score"] = doc.get("score", 0.0)
-            return documents
+            return documents[:top_k] if top_k is not None else documents
 
-        # Get relevance scores
         try:
-            model = await self._ensure_model_loaded()
-            # `model.predict` is CPU/GPU bound and synchronous; run it in a
-            # worker thread so we don't stall the event loop (especially
-            # important on the very first call, which also triggers the
-            # lazy download/load above).
-            scores = await asyncio.to_thread(model.predict, doc_query_pairs)
+            model, tokenizer = await self._ensure_model_loaded()
+            # Tokenization + ONNX inference are CPU-bound and synchronous; run in a
+            # worker thread so we never stall the event loop (the first call also
+            # triggers the lazy load above).
+            scores = await asyncio.to_thread(
+                self._predict_scores_sync, model, tokenizer, doc_query_pairs
+            )
         except Exception:
             for doc in documents:
                 doc["reranker_score"] = 0.0
                 doc["final_score"] = doc.get("score", 0.0)
-            return documents
+            return documents[:top_k] if top_k is not None else documents
 
-        # Add scores to documents, but only for non-IMAGE blocks
+        # Add scores to documents, but only for non-IMAGE blocks with content
         score_index = 0
         for doc in documents:
             if doc.get("block_type") != BlockType.IMAGE.value and doc.get("content"):
                 doc["reranker_score"] = float(scores[score_index])
-                # If there was a previous score, we can combine them
                 if "score" in doc:
                     # Weighted combination of retriever and reranker scores
                     doc["final_score"] = 0.3 * doc["score"] + 0.7 * doc["reranker_score"]
@@ -115,17 +135,13 @@ class RerankerService:
                     doc["final_score"] = doc["reranker_score"]
                 score_index += 1
             else:
-                # For IMAGE blocks, set default scores
                 doc["reranker_score"] = 0.0
                 doc["final_score"] = doc.get("score", 0.0)
 
-        # Sort by final score
         reranked_docs = sorted(
             documents, key=lambda d: d.get("final_score", 0), reverse=True
         )
 
-        # Return top_k if specified
         if top_k is not None:
             return reranked_docs[:top_k]
-
         return reranked_docs

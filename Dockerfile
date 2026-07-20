@@ -56,6 +56,9 @@ RUN uv pip install --system -e . && \
     python -c "from langchain_huggingface import HuggingFaceEmbeddings; HuggingFaceEmbeddings(model_name='BAAI/bge-large-en-v1.5', model_kwargs={'device': 'cpu'}, encode_kwargs={'normalize_embeddings': True})" && \
     # Sparse embedding model used by FastEmbedSparse in RetrievalService.__init__.
     python -c "from langchain_qdrant import FastEmbedSparse; FastEmbedSparse(model_name='Qdrant/BM25')" && \
+    # Reranker cross-encoder (ONNX) used by RerankerService on the /search enrich path.
+    # Baked here so GKE pods don't download it on first rerank (see add-search-reranking).
+    python -c "from optimum.onnxruntime import ORTModelForSequenceClassification; from transformers import AutoTokenizer; m='onnx-community/gte-multilingual-reranker-base'; ORTModelForSequenceClassification.from_pretrained(m, subfolder='onnx'); AutoTokenizer.from_pretrained(m)" && \
     # Clean up caches and __pycache__ to save space
     rm -rf /root/.cache/pip /root/.cache/uv /tmp/* && \
     find /usr/local/lib/python3.12 -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true && \
