@@ -1,4 +1,3 @@
-import asyncio
 from typing import TYPE_CHECKING, Any, Optional
 
 from dependency_injector.wiring import inject
@@ -10,8 +9,13 @@ from app.api.middlewares.auth import require_scopes
 from app.config.configuration_service import ConfigurationService
 from app.config.constants.service import OAuthScopes
 from app.modules.retrieval.retrieval_service import RetrievalService
+from app.modules.transformers.blob_storage import BlobStorage
 from app.services.graph_db.interface.graph_db_provider import IGraphDBProvider
-from app.utils.query_transform import setup_query_transformation
+from app.utils.chat_helpers import (
+    build_plain_context,
+    enrich_virtual_record_id_to_result_with_fk_children,
+    get_flattened_results,
+)
 
 if TYPE_CHECKING:
     from app.containers.query import QueryAppContainer
@@ -24,6 +28,10 @@ class SearchQuery(BaseModel):
     query: str
     limit: Optional[int] = 5
     filters: Optional[dict[str, Any]] = {}
+    # Opt-in: return chat-parity enriched context (full block content + FK-child
+    # blocks + document order) instead of raw matched chunks. Off by default so
+    # existing /search consumers are unaffected.
+    enrich: Optional[bool] = False
 
 
 class SimilarDocumentQuery(BaseModel):
@@ -59,6 +67,7 @@ async def search(
     body: SearchQuery,
     retrieval_service: RetrievalService = Depends(get_retrieval_service),
     graph_provider: IGraphDBProvider = Depends(get_graph_provider),
+    config_service: ConfigurationService = Depends(get_config_service),
 )-> JSONResponse :
     """Perform semantic search across documents"""
     try:
@@ -66,9 +75,14 @@ async def search(
         logger = container.logger()
         # Extract KB IDs from filters if present
         updated_filters = body.filters
+        org_id = request.state.user.get("orgId")
+        user_id = request.state.user.get("userId")
 
-        # --- TEST: query rewrite + expansion DISABILITATI ---
-        # Per ripristinare: togli il commento al blocco sotto e rimuovi `queries = [body.query]`.
+        # --- LLM query rewrite + expansion (DISABLED) ---
+        # To re-enable: uncomment the block below, pass `queries=queries` to
+        # search_with_filters, and re-add the imports at the top of this file:
+        #   import asyncio
+        #   from app.utils.query_transform import setup_query_transformation
         # llm = retrieval_service.llm
         # if llm is None:
         #     llm = await retrieval_service.get_llm_instance()
@@ -77,36 +91,58 @@ async def search(
         #             status_code=500,
         #             detail="Failed to initialize LLM service. LLM configuration is missing.",
         #         )
-        #
-        # # Setup query transformation
         # rewrite_chain, expansion_chain = setup_query_transformation(llm)
-        #
-        # # Run query transformations in parallel
         # rewritten_query, expanded_queries = await asyncio.gather(
         #     rewrite_chain.ainvoke(body.query), expansion_chain.ainvoke(body.query)
         # )
-        #
-        # logger.debug(f"Rewritten query: {rewritten_query}")
-        # logger.debug(f"Expanded queries: {expanded_queries}")
-        #
         # expanded_queries_list = [
         #     q.strip() for q in expanded_queries.split("\n") if q.strip()
         # ]
-        #
         # queries = [rewritten_query.strip()] if rewritten_query.strip() else []
         # queries.extend([q for q in expanded_queries_list if q not in queries])
-        queries = [body.query]
-        # --- fine TEST ---
+        # --- end LLM query rewrite + expansion ---
+
         results = await retrieval_service.search_with_filters(
-            queries=queries,
-            org_id=request.state.user.get("orgId"),
-            user_id=request.state.user.get("userId"),
+            queries=[body.query],
+            org_id=org_id,
+            user_id=user_id,
             limit=body.limit,
             filter_groups=updated_filters,
             knowledge_search=True,
         )
         custom_status_code = results.get("status_code", 500)
         logger.info(f"Custom status code: {custom_status_code}")
+
+        # Opt-in chat-parity enrichment: apply the same post-retrieval steps the
+        # chat flow runs (get_flattened_results + FK-child blocks + document order)
+        # so a caller with its own LLM receives the context chat feeds its LLM.
+        if body.enrich and custom_status_code == 200 and results.get("searchResults"):
+            blob_store = BlobStorage(
+                logger=logger, config_service=config_service, graph_provider=graph_provider
+            )
+            virtual_record_id_to_result: dict[str, Any] = {}
+            flattened_results = await get_flattened_results(
+                results["searchResults"],
+                blob_store,
+                org_id,
+                False,  # is_multimodal_llm — text-only context for the external LLM
+                virtual_record_id_to_result,
+                results.get("virtual_to_record_map", {}),
+                from_retrieval_service=True,
+                graph_provider=graph_provider,
+            )
+            await enrich_virtual_record_id_to_result_with_fk_children(
+                virtual_record_id_to_result, blob_store, org_id, graph_provider, flattened_results
+            )
+            flattened_results.sort(
+                key=lambda x: (x.get("virtual_record_id", ""), x.get("block_index", 0))
+            )
+            results["searchResults"] = flattened_results
+            # Clean plain-text context (no prompt scaffolding, no citation refs)
+            # for a caller running its own LLM — same content the chat LLM sees.
+            results["context"] = build_plain_context(
+                flattened_results, virtual_record_id_to_result
+            )
 
         return JSONResponse(status_code=custom_status_code, content=results)
 

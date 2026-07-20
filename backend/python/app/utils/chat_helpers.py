@@ -1759,6 +1759,70 @@ Record blocks (sorted):\n\n"""
         raise Exception(f"Error in record_to_message_content: {e}") from e
 
 
+def _plain_block_text(content: Any) -> str:
+    """Flatten a block's content into plain text.
+
+    Content is either a string (TEXT blocks) or a ``(summary, children)`` tuple
+    for tables/block-groups, where children are block dicts. No citation markers,
+    no prompt scaffolding.
+    """
+    if content is None:
+        return ""
+    if isinstance(content, str):
+        return content.strip()
+    if isinstance(content, (tuple, list)):
+        parts: list[str] = []
+        for item in content:
+            if isinstance(item, str):
+                if item.strip():
+                    parts.append(item.strip())
+            elif isinstance(item, dict):
+                child = _plain_block_text(item.get("content"))
+                if child:
+                    parts.append(child)
+            elif isinstance(item, (list, tuple)):
+                for sub in item:
+                    text = _plain_block_text(sub.get("content") if isinstance(sub, dict) else sub)
+                    if text:
+                        parts.append(text)
+        return "\n".join(parts)
+    return str(content).strip()
+
+
+def build_plain_context(
+    flattened_results: list[dict[str, Any]],
+    virtual_record_id_to_result: dict[str, Any],
+) -> str:
+    """Render flattened retrieval results as clean plain-text context.
+
+    Same context *content* the chat LLM receives (full block text, tables,
+    document order) but WITHOUT the QnA prompt scaffolding or citation refs that
+    ``get_message_content`` adds — for a caller that runs its own LLM. Assumes the
+    results are already sorted by ``(virtual_record_id, block_index)``.
+    """
+    lines: list[str] = []
+    current_vrid = None
+    for result in flattened_results:
+        if result.get("block_type") == BlockType.IMAGE.value:
+            continue
+        text = _plain_block_text(result.get("content"))
+        if not text:
+            continue
+        vrid = result.get("virtual_record_id")
+        if vrid != current_vrid:
+            current_vrid = vrid
+            record = virtual_record_id_to_result.get(vrid) or {}
+            name = (
+                record.get("record_name")
+                or record.get("recordName")
+                or (result.get("metadata") or {}).get("recordName")
+                or "Untitled"
+            )
+            lines.append(f"\n## {name}")
+        lines.append(text)
+    return "\n".join(lines).strip()
+
+
 def get_message_content(flattened_results: list[dict[str, Any]], virtual_record_id_to_result: dict[str, Any], user_data: str, query: str, mode: str = "json",is_multimodal_llm: bool=False, ref_mapper: CitationRefMapper | None = None,from_tool: bool=True, has_sql_connector: bool=False) -> tuple[list[dict[str, Any]], CitationRefMapper]:
     if ref_mapper is None:
         ref_mapper = CitationRefMapper()
