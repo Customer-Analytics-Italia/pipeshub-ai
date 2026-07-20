@@ -1,6 +1,8 @@
 import asyncio
 from typing import Any, Dict, List, Optional
 
+import numpy as np
+
 from app.models.blocks import BlockType, GroupType
 
 # Multilingual (incl. Italian), Apache-2.0, small encoder — loaded as ONNX for
@@ -19,7 +21,7 @@ class RerankerService:
         Args:
             model_name: an ONNX cross-encoder reranker on HuggingFace. Default is
                 gte-multilingual-reranker-base (Apache-2.0, multilingual), loaded
-                via optimum.onnxruntime for CPU inference.
+                via onnxruntime + transformers for CPU inference.
 
         Note:
             The model is NOT loaded here. Loading (and, on a cold cache,
@@ -35,16 +37,38 @@ class RerankerService:
         self._model_lock = asyncio.Lock()
 
     def _load_model_sync(self):
-        """Blocking load of the ONNX reranker + tokenizer. Runs in a worker thread."""
-        from optimum.onnxruntime import ORTModelForSequenceClassification
+        """Blocking load of the ONNX reranker + tokenizer. Runs in a worker thread.
+
+        Uses onnxruntime + transformers + huggingface_hub directly — all already
+        in the image — so we avoid pulling `optimum`, which destabilizes the
+        pinned pyarrow/datasets and breaks the sentence-transformers import.
+        """
+        import os
+
+        import onnxruntime as ort
+        from huggingface_hub import snapshot_download
         from transformers import AutoTokenizer
 
-        tokenizer = AutoTokenizer.from_pretrained(self.model_name)
         # onnx-community exports keep the graph under an `onnx/` subfolder.
-        model = ORTModelForSequenceClassification.from_pretrained(
-            self.model_name, subfolder="onnx"
+        local_dir = snapshot_download(
+            self.model_name,
+            allow_patterns=[
+                "onnx/model.onnx",
+                "onnx/model.onnx_data",
+                "*.json",
+                "*.txt",
+                "*.model",
+                "tokenizer*",
+                "sentencepiece*",
+                "spm*",
+            ],
         )
-        return model, tokenizer
+        tokenizer = AutoTokenizer.from_pretrained(local_dir)
+        session = ort.InferenceSession(
+            os.path.join(local_dir, "onnx", "model.onnx"),
+            providers=["CPUExecutionProvider"],
+        )
+        return session, tokenizer
 
     async def _ensure_model_loaded(self):
         """Lazily load the reranker on first use, off the event loop."""
@@ -55,21 +79,24 @@ class RerankerService:
                 self._model, self._tokenizer = await asyncio.to_thread(self._load_model_sync)
         return self._model, self._tokenizer
 
-    def _predict_scores_sync(self, model, tokenizer, pairs: List[tuple]) -> List[float]:
+    def _predict_scores_sync(self, session, tokenizer, pairs: List[tuple]) -> List[float]:
         """Score (query, passage) pairs with the ONNX cross-encoder. CPU-bound."""
+        input_names = {i.name for i in session.get_inputs()}
         scores: List[float] = []
         for start in range(0, len(pairs), _BATCH_SIZE):
             batch = pairs[start:start + _BATCH_SIZE]
-            inputs = tokenizer(
+            enc = tokenizer(
                 [p[0] for p in batch],
                 [p[1] for p in batch],
                 padding=True,
                 truncation=True,
                 max_length=_MAX_LENGTH,
-                return_tensors="pt",
+                return_tensors="np",
             )
-            logits = model(**inputs).logits.reshape(-1)
-            scores.extend(logits.tolist())
+            # Feed only the inputs the ONNX graph declares (XLM-R has no token_type_ids).
+            feed = {k: v for k, v in enc.items() if k in input_names}
+            logits = session.run(None, feed)[0]
+            scores.extend(np.asarray(logits).reshape(-1).tolist())
         return scores
 
     async def rerank(
