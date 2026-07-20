@@ -1,9 +1,13 @@
 import asyncio
+import time
 from typing import Any, Dict, List, Optional
 
 import numpy as np
 
 from app.models.blocks import BlockType, GroupType
+from app.utils.logger import create_logger
+
+logger = create_logger("reranker")
 
 # Multilingual (incl. Italian), Apache-2.0, small encoder — loaded as ONNX for
 # CPU inference. The `onnx-community` export ships a plain ONNX graph so we avoid
@@ -76,7 +80,10 @@ class RerankerService:
             return self._model, self._tokenizer
         async with self._model_lock:
             if self._model is None:
+                logger.info(f"Loading reranker model: {self.model_name}")
+                start = time.perf_counter()
                 self._model, self._tokenizer = await asyncio.to_thread(self._load_model_sync)
+                logger.info(f"Reranker model loaded in {time.perf_counter() - start:.1f}s")
         return self._model, self._tokenizer
 
     def _predict_scores_sync(self, session, tokenizer, pairs: List[tuple]) -> List[float]:
@@ -145,6 +152,9 @@ class RerankerService:
                 self._predict_scores_sync, model, tokenizer, doc_query_pairs
             )
         except Exception:
+            logger.warning(
+                "Reranker failed; falling back to retrieval order", exc_info=True
+            )
             for doc in documents:
                 doc["reranker_score"] = 0.0
                 doc["final_score"] = doc.get("score", 0.0)
@@ -167,6 +177,13 @@ class RerankerService:
 
         reranked_docs = sorted(
             documents, key=lambda d: d.get("final_score", 0), reverse=True
+        )
+
+        kept = top_k if top_k is not None else len(reranked_docs)
+        top_score = reranked_docs[0].get("reranker_score") if reranked_docs else None
+        logger.info(
+            "Reranked %d candidates → top %d (model=%s, top_score=%s)",
+            len(doc_query_pairs), kept, self.model_name, top_score,
         )
 
         if top_k is not None:
