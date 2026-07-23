@@ -32,6 +32,8 @@ class TestSearchQueryModel:
         assert sq.limit == 50
         assert sq.filters == {}
         assert sq.enrich is True
+        assert sq.full_document is True
+        assert sq.max_documents == 1
 
     def test_valid_query_with_all_fields(self):
         sq = SearchQuery(
@@ -50,6 +52,10 @@ class TestSearchQueryModel:
     def test_invalid_candidate_limits_are_rejected(self):
         with pytest.raises(ValidationError):
             SearchQuery(query="q", limit=0)
+
+    def test_invalid_full_document_limit_is_rejected(self):
+        with pytest.raises(ValidationError):
+            SearchQuery(query="q", full_document=True, max_documents=6)
 
     def test_filters_none(self):
         sq = SearchQuery(query="q", filters=None)

@@ -200,6 +200,8 @@ describe('enterprise_search/validators/es_validators', () => {
       if (result.success) {
         expect(result.data.body.limit).to.equal(50)
         expect(result.data.body.enrich).to.equal(true)
+        expect(result.data.body.full_document).to.equal(true)
+        expect(result.data.body.max_documents).to.equal(1)
       }
     })
 
@@ -211,7 +213,13 @@ describe('enterprise_search/validators/es_validators', () => {
 
     it('should validate search enrichment options', () => {
       const valid = enterpriseSearchSearchSchema.safeParse({
-        body: { query: 'test', limit: 50, enrich: false },
+        body: {
+          query: 'test',
+          limit: 50,
+          enrich: false,
+          full_document: true,
+          max_documents: 3,
+        },
       })
       expect(valid.success).to.be.true
 
@@ -219,6 +227,11 @@ describe('enterprise_search/validators/es_validators', () => {
         body: { query: 'test', limit: 101 },
       })
       expect(invalid.success).to.be.false
+
+      const tooManyDocuments = enterpriseSearchSearchSchema.safeParse({
+        body: { query: 'test', full_document: true, max_documents: 6 },
+      })
+      expect(tooManyDocuments.success).to.be.false
     })
   })
 

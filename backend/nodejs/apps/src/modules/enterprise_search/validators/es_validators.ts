@@ -308,6 +308,8 @@ export const enterpriseSearchSearchSchema = z.object({
     filters: filtersSchema,
     limit: limitSchema.default(50),
     enrich: z.boolean().default(true),
+    full_document: z.boolean().default(true),
+    max_documents: z.number().int().min(1).max(5).default(1),
     ...modelFieldsSchema,
   }),
 });

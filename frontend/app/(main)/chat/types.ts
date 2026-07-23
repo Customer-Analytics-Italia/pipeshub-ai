@@ -666,6 +666,8 @@ export interface SearchRequest {
   query: string;
   limit: number;
   enrich: boolean;
+  full_document?: boolean;
+  max_documents?: number;
   filters: SearchFilters;
 }
 

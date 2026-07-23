@@ -77,6 +77,8 @@ export function ChatInputWrapper() {
       query,
       limit: 50,
       enrich: true,
+      full_document: true,
+      max_documents: 1,
       filters: {
         departments: [],
         moduleIds: [],
