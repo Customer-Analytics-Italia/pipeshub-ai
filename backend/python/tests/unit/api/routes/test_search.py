@@ -29,10 +29,9 @@ class TestSearchQueryModel:
     def test_valid_query_minimal(self):
         sq = SearchQuery(query="hello world")
         assert sq.query == "hello world"
-        assert sq.limit == 30
+        assert sq.limit == 50
         assert sq.filters == {}
         assert sq.enrich is True
-        assert sq.top_k == 10
 
     def test_valid_query_with_all_fields(self):
         sq = SearchQuery(
@@ -51,8 +50,6 @@ class TestSearchQueryModel:
     def test_invalid_candidate_limits_are_rejected(self):
         with pytest.raises(ValidationError):
             SearchQuery(query="q", limit=0)
-        with pytest.raises(ValidationError):
-            SearchQuery(query="q", top_k=101)
 
     def test_filters_none(self):
         sq = SearchQuery(query="q", filters=None)
@@ -468,7 +465,7 @@ class TestSearchEndpoint:
 
     @pytest.mark.asyncio
     async def test_search_passes_correct_params_to_retrieval(self):
-        """Verify org_id, user_id, limit, knowledge_search are forwarded."""
+        """Verify org_id, user_id, and limit are forwarded."""
         request = self._build_request(user_id="u42", org_id="o99")
 
         mock_retrieval = MagicMock()
@@ -498,5 +495,5 @@ class TestSearchEndpoint:
         assert call_kwargs["org_id"] == "o99"
         assert call_kwargs["user_id"] == "u42"
         assert call_kwargs["limit"] == 7
-        assert call_kwargs["knowledge_search"] is True
+        assert "knowledge_search" not in call_kwargs
         assert call_kwargs["filter_groups"] == {"type": ["file"]}

@@ -3814,10 +3814,9 @@ export const search =
     try {
       const {
         query,
-        limit = 30,
+        limit = 50,
         filters,
         enrich = true,
-        top_k = 10,
       } = req.body;
 
       // Validate query parameter for XSS and format specifiers
@@ -3832,7 +3831,6 @@ export const search =
         limit,
         filters,
         enrich,
-        top_k,
         timestamp: new Date().toISOString(),
       });
 
@@ -3840,7 +3838,7 @@ export const search =
         uri: `${aiBackendUrl}/api/v1/search`,
         method: HttpMethod.POST,
         headers: req.headers as Record<string, string>,
-        body: { query, limit, filters, enrich, top_k },
+        body: { query, limit, filters, enrich },
       });
 
       let aiResponse;

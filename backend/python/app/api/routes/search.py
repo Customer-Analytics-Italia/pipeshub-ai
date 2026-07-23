@@ -9,7 +9,6 @@ from pydantic import BaseModel, Field
 from app.api.middlewares.auth import require_scopes
 from app.config.configuration_service import ConfigurationService
 from app.config.constants.service import OAuthScopes
-from app.modules.reranker.reranker import RerankerService
 from app.modules.retrieval.retrieval_service import RetrievalService
 from app.modules.transformers.blob_storage import BlobStorage
 from app.services.graph_db.interface.graph_db_provider import IGraphDBProvider
@@ -28,16 +27,12 @@ router = APIRouter()
 # Pydantic models
 class SearchQuery(BaseModel):
     query: str
-    # Retrieve a wider candidate pool before reranking. This matches the search
-    # quality experiment used by Calpurnia while keeping the final response small.
-    limit: int = Field(default=30, ge=1, le=100)
+    # Match the chat retrieval candidate pool.
+    limit: int = Field(default=50, ge=1, le=100)
     filters: Optional[dict[str, Any]] = {}
     # Return chat-parity context by default so API consumers receive full block
-    # content after reranking. Callers can still opt out with enrich=false.
+    # content after hybrid retrieval. Callers can still opt out with enrich=false.
     enrich: bool = True
-    # `limit` is the candidate pool; `top_k` is how many chunks survive
-    # reranking and reach the enrichment/context stage.
-    top_k: int = Field(default=10, ge=1, le=100)
 
 
 class SimilarDocumentQuery(BaseModel):
@@ -66,11 +61,6 @@ async def get_config_service(request: Request) -> ConfigurationService:
     return container.config_service()
 
 
-async def get_reranker_service(request: Request) -> RerankerService:
-    container: QueryAppContainer = request.app.container
-    return container.reranker_service()
-
-
 @router.post("/search", dependencies=[Depends(require_scopes(OAuthScopes.SEMANTIC_WRITE))])
 @inject
 async def search(
@@ -79,7 +69,6 @@ async def search(
     retrieval_service: RetrievalService = Depends(get_retrieval_service),
     graph_provider: IGraphDBProvider = Depends(get_graph_provider),
     config_service: ConfigurationService = Depends(get_config_service),
-    reranker_service: RerankerService = Depends(get_reranker_service),
 )-> JSONResponse :
     """Perform semantic search across documents"""
     try:
@@ -121,12 +110,10 @@ async def search(
             user_id=user_id,
             limit=body.limit,
             filter_groups=updated_filters,
-            knowledge_search=True,
         )
         retrieval_ms = (time.perf_counter() - retrieval_started) * 1000
         custom_status_code = results.get("status_code", 500)
         logger.info(f"Custom status code: {custom_status_code}")
-        rerank_ms = 0.0
         enrichment_ms = 0.0
         candidate_count = len(results.get("searchResults") or [])
 
@@ -134,16 +121,9 @@ async def search(
         # flow runs (get_flattened_results + FK-child blocks + document order)
         # so a caller with its own LLM receives the context chat feeds its LLM.
         if body.enrich and custom_status_code == 200 and results.get("searchResults"):
-            # Retrieve wide (limit = candidate pool), rerank with the multilingual
-            # cross-encoder, and keep only top_k — so a low-ranked-but-relevant
-            # chunk surfaces without enriching the whole pool. Reranking must also
-            # run when len(search_hits) <= top_k: it still improves result order.
+            # Match the chat path: preserve Qdrant's hybrid dense+BM25/RRF
+            # ordering, then flatten and enrich the complete candidate pool.
             search_hits = results["searchResults"]
-            rerank_started = time.perf_counter()
-            search_hits = await reranker_service.rerank(
-                body.query, search_hits, top_k=body.top_k
-            )
-            rerank_ms = (time.perf_counter() - rerank_started) * 1000
 
             enrichment_started = time.perf_counter()
             blob_store = BlobStorage(
@@ -157,7 +137,6 @@ async def search(
                 False,  # is_multimodal_llm — text-only context for the external LLM
                 virtual_record_id_to_result,
                 results.get("virtual_to_record_map", {}),
-                from_retrieval_service=True,
                 graph_provider=graph_provider,
             )
             await enrich_virtual_record_id_to_result_with_fk_children(
@@ -175,10 +154,9 @@ async def search(
             enrichment_ms = (time.perf_counter() - enrichment_started) * 1000
 
         logger.info(
-            "Search timings: retrieval=%.1fms rerank=%.1fms enrichment=%.1fms "
+            "Search timings: retrieval=%.1fms enrichment=%.1fms "
             "candidates=%d returned=%d enrich=%s",
             retrieval_ms,
-            rerank_ms,
             enrichment_ms,
             candidate_count,
             len(results.get("searchResults") or []),

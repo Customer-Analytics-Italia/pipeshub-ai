@@ -666,7 +666,6 @@ export interface SearchRequest {
   query: string;
   limit: number;
   enrich: boolean;
-  top_k: number;
   filters: SearchFilters;
 }
 

@@ -75,9 +75,8 @@ export function ChatInputWrapper() {
     const streamFilters = buildAssistantApiFilters(store.settings.filters);
     const request: SearchRequest = {
       query,
-      limit: 30,
+      limit: 50,
       enrich: true,
-      top_k: 10,
       filters: {
         departments: [],
         moduleIds: [],
