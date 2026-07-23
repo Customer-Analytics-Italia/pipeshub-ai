@@ -3804,6 +3804,36 @@ export const searchArchivedConversations =
   }
   };
 
+const normalizeCitationContent = (content: unknown): string => {
+  const textParts: string[] = [];
+
+  const collectText = (value: unknown): void => {
+    if (typeof value === 'string') {
+      if (value.length > 0) {
+        textParts.push(value);
+      }
+      return;
+    }
+
+    if (typeof value === 'number' || typeof value === 'boolean') {
+      textParts.push(String(value));
+      return;
+    }
+
+    if (Array.isArray(value)) {
+      value.forEach(collectText);
+      return;
+    }
+
+    if (value && typeof value === 'object' && 'content' in value) {
+      collectText((value as { content: unknown }).content);
+    }
+  };
+
+  collectText(content);
+  return textParts.join('\n');
+};
+
 export const search =
   (appConfig: AppConfig) =>
   async (req: AuthenticatedUserRequest, res: Response, next: NextFunction) => {
@@ -3872,7 +3902,11 @@ export const search =
         citationIds = await Promise.all(
           results.map(async (result: ICitation) => {
             const citationDoc = new Citation({
-              content: result.content,
+              // Enriched chat-parity results can contain grouped content in
+              // the form [summary, childResults]. Citation.content is a
+              // string, so persist a flattened copy while leaving the API
+              // response and its structured content unchanged.
+              content: normalizeCitationContent(result.content),
               chunkIndex: result.chunkIndex ?? 0, // fallback to 0 if not present
               citationType: result.citationType,
               metadata: result.metadata,

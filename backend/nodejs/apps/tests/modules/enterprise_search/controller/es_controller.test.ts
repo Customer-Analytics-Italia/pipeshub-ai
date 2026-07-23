@@ -8785,6 +8785,58 @@ describe('Enterprise Search Controller', () => {
         expect(res.status.calledWith(200)).to.be.true
       }
     })
+
+    it('should flatten structured enriched content before saving a citation', async () => {
+      const handler = search(createMockAppConfig())
+      const structuredContent = [
+        '',
+        [
+          { content: 'Comune: Porcia', block_type: 'text' },
+          { content: 'Provincia: PN', block_type: 'text' },
+        ],
+      ]
+      const aiData = {
+        searchResults: [
+          {
+            content: structuredContent,
+            citationType: 'vectordb|document',
+            metadata: {},
+          },
+        ],
+        records: [],
+        context: 'Comune: Porcia\nProvincia: PN',
+      }
+
+      sinon.stub(AIServiceCommand.prototype, 'execute').resolves({
+        statusCode: 200,
+        data: aiData,
+      } as any)
+
+      const mockCitation = { _id: new mongoose.Types.ObjectId() }
+      const citationSaveStub = sinon
+        .stub(Citation.prototype, 'save')
+        .resolves(mockCitation as any)
+      sinon.stub(EnterpriseSemanticSearch.prototype, 'save').resolves({
+        _id: new mongoose.Types.ObjectId(),
+      } as any)
+
+      const req = createMockRequest({
+        body: { query: 'carta identità' },
+        user: { userId: VALID_OID, orgId: VALID_OID2 },
+      })
+      const res = createMockResponse()
+      const next = createMockNext()
+
+      await handler(req, res, next)
+
+      expect(next.called).to.be.false
+      expect(citationSaveStub.calledOnce).to.be.true
+      expect((citationSaveStub.thisValues[0] as any).content).to.equal(
+        'Comune: Porcia\nProvincia: PN',
+      )
+      expect(res.json.firstCall.args[0].searchResponse).to.equal(aiData)
+      expect(aiData.searchResults[0].content).to.equal(structuredContent)
+    })
   })
 
   // -----------------------------------------------------------------------
