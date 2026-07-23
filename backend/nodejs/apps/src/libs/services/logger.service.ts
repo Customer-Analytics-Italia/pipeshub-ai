@@ -107,14 +107,18 @@ export class Logger {
           filename: 'combined.log',
           format: winston.format.combine(logFormat, winston.format.json())
         }),
-        ...(process.env.NODE_ENV !== 'production'
-          ? [new winston.transports.Console({
-            format: winston.format.combine(
+        // GKE collects application logs from container stdout/stderr. Keep the
+        // human-readable development output, but emit structured JSON in
+        // production so Cloud Logging can index fields such as message,
+        // metadata, filename, and line.
+        new winston.transports.Console({
+          format: process.env.NODE_ENV === 'production'
+            ? winston.format.json()
+            : winston.format.combine(
               winston.format.colorize(),
               logFormat
             )
-          })]
-          : []),
+        }),
       ],
     });
   }
