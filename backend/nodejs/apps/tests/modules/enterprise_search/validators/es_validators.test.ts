@@ -197,12 +197,29 @@ describe('enterprise_search/validators/es_validators', () => {
       const data = { body: { query: 'test query' } }
       const result = enterpriseSearchSearchSchema.safeParse(data)
       expect(result.success).to.be.true
+      if (result.success) {
+        expect(result.data.body.limit).to.equal(30)
+        expect(result.data.body.enrich).to.equal(true)
+        expect(result.data.body.top_k).to.equal(10)
+      }
     })
 
     it('should reject empty query', () => {
       const data = { body: { query: '' } }
       const result = enterpriseSearchSearchSchema.safeParse(data)
       expect(result.success).to.be.false
+    })
+
+    it('should validate search reranking options', () => {
+      const valid = enterpriseSearchSearchSchema.safeParse({
+        body: { query: 'test', limit: 50, enrich: false, top_k: 20 },
+      })
+      expect(valid.success).to.be.true
+
+      const invalid = enterpriseSearchSearchSchema.safeParse({
+        body: { query: 'test', top_k: 101 },
+      })
+      expect(invalid.success).to.be.false
     })
   })
 

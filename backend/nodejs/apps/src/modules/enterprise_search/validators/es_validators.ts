@@ -306,7 +306,9 @@ export const enterpriseSearchSearchSchema = z.object({
   body: z.object({
     query: z.string().min(1, { message: 'Search query is required' }),
     filters: filtersSchema,
-    limit: limitSchema.optional(),
+    limit: limitSchema.default(30),
+    enrich: z.boolean().default(true),
+    top_k: z.number().int().min(1).max(100).default(10),
     ...modelFieldsSchema,
   }),
 });

@@ -1,9 +1,10 @@
+import time
 from typing import TYPE_CHECKING, Any, Optional
 
 from dependency_injector.wiring import inject
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.api.middlewares.auth import require_scopes
 from app.config.configuration_service import ConfigurationService
@@ -27,15 +28,16 @@ router = APIRouter()
 # Pydantic models
 class SearchQuery(BaseModel):
     query: str
-    limit: Optional[int] = 5
+    # Retrieve a wider candidate pool before reranking. This matches the search
+    # quality experiment used by Calpurnia while keeping the final response small.
+    limit: int = Field(default=30, ge=1, le=100)
     filters: Optional[dict[str, Any]] = {}
-    # Opt-in: return chat-parity enriched context (full block content + FK-child
-    # blocks + document order) instead of raw matched chunks. Off by default so
-    # existing /search consumers are unaffected.
-    enrich: Optional[bool] = False
-    # On the enrich path, `limit` is the candidate pool and `top_k` is how many
-    # chunks survive reranking and reach the context. Only used when enrich=true.
-    top_k: Optional[int] = 10
+    # Return chat-parity context by default so API consumers receive full block
+    # content after reranking. Callers can still opt out with enrich=false.
+    enrich: bool = True
+    # `limit` is the candidate pool; `top_k` is how many chunks survive
+    # reranking and reach the enrichment/context stage.
+    top_k: int = Field(default=10, ge=1, le=100)
 
 
 class SimilarDocumentQuery(BaseModel):
@@ -112,6 +114,7 @@ async def search(
         # queries.extend([q for q in expanded_queries_list if q not in queries])
         # --- end LLM query rewrite + expansion ---
 
+        retrieval_started = time.perf_counter()
         results = await retrieval_service.search_with_filters(
             queries=[body.query],
             org_id=org_id,
@@ -120,24 +123,29 @@ async def search(
             filter_groups=updated_filters,
             knowledge_search=True,
         )
+        retrieval_ms = (time.perf_counter() - retrieval_started) * 1000
         custom_status_code = results.get("status_code", 500)
         logger.info(f"Custom status code: {custom_status_code}")
+        rerank_ms = 0.0
+        enrichment_ms = 0.0
+        candidate_count = len(results.get("searchResults") or [])
 
-        # Opt-in chat-parity enrichment: apply the same post-retrieval steps the
-        # chat flow runs (get_flattened_results + FK-child blocks + document order)
+        # Chat-parity enrichment applies the same post-retrieval steps the chat
+        # flow runs (get_flattened_results + FK-child blocks + document order)
         # so a caller with its own LLM receives the context chat feeds its LLM.
         if body.enrich and custom_status_code == 200 and results.get("searchResults"):
             # Retrieve wide (limit = candidate pool), rerank with the multilingual
             # cross-encoder, and keep only top_k — so a low-ranked-but-relevant
-            # chunk surfaces without enriching the whole pool. Skipped when the pool
-            # is already <= top_k.
+            # chunk surfaces without enriching the whole pool. Reranking must also
+            # run when len(search_hits) <= top_k: it still improves result order.
             search_hits = results["searchResults"]
-            top_k = body.top_k or 10
-            if len(search_hits) > top_k:
-                search_hits = await reranker_service.rerank(
-                    body.query, search_hits, top_k=top_k
-                )
+            rerank_started = time.perf_counter()
+            search_hits = await reranker_service.rerank(
+                body.query, search_hits, top_k=body.top_k
+            )
+            rerank_ms = (time.perf_counter() - rerank_started) * 1000
 
+            enrichment_started = time.perf_counter()
             blob_store = BlobStorage(
                 logger=logger, config_service=config_service, graph_provider=graph_provider
             )
@@ -164,6 +172,18 @@ async def search(
             results["context"] = build_plain_context(
                 flattened_results, virtual_record_id_to_result
             )
+            enrichment_ms = (time.perf_counter() - enrichment_started) * 1000
+
+        logger.info(
+            "Search timings: retrieval=%.1fms rerank=%.1fms enrichment=%.1fms "
+            "candidates=%d returned=%d enrich=%s",
+            retrieval_ms,
+            rerank_ms,
+            enrichment_ms,
+            candidate_count,
+            len(results.get("searchResults") or []),
+            body.enrich,
+        )
 
         return JSONResponse(status_code=custom_status_code, content=results)
 

@@ -3812,7 +3812,13 @@ export const search =
     const orgId = req.user?.orgId;
     const userId = req.user?.userId;
     try {
-      const { query, limit, filters } = req.body;
+      const {
+        query,
+        limit = 30,
+        filters,
+        enrich = true,
+        top_k = 10,
+      } = req.body;
 
       // Validate query parameter for XSS and format specifiers
       if (query && typeof query === 'string') {
@@ -3825,6 +3831,8 @@ export const search =
         query,
         limit,
         filters,
+        enrich,
+        top_k,
         timestamp: new Date().toISOString(),
       });
 
@@ -3832,7 +3840,7 @@ export const search =
         uri: `${aiBackendUrl}/api/v1/search`,
         method: HttpMethod.POST,
         headers: req.headers as Record<string, string>,
-        body: { query, limit, filters },
+        body: { query, limit, filters, enrich, top_k },
       });
 
       let aiResponse;

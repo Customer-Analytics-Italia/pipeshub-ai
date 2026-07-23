@@ -29,8 +29,10 @@ class TestSearchQueryModel:
     def test_valid_query_minimal(self):
         sq = SearchQuery(query="hello world")
         assert sq.query == "hello world"
-        assert sq.limit == 5
+        assert sq.limit == 30
         assert sq.filters == {}
+        assert sq.enrich is True
+        assert sq.top_k == 10
 
     def test_valid_query_with_all_fields(self):
         sq = SearchQuery(
@@ -42,9 +44,15 @@ class TestSearchQueryModel:
         assert sq.limit == 10
         assert sq.filters == {"kb": ["kb1", "kb2"]}
 
-    def test_limit_none_uses_default(self):
-        sq = SearchQuery(query="q", limit=None)
-        assert sq.limit is None
+    def test_limit_none_is_rejected(self):
+        with pytest.raises(ValidationError):
+            SearchQuery(query="q", limit=None)
+
+    def test_invalid_candidate_limits_are_rejected(self):
+        with pytest.raises(ValidationError):
+            SearchQuery(query="q", limit=0)
+        with pytest.raises(ValidationError):
+            SearchQuery(query="q", top_k=101)
 
     def test_filters_none(self):
         sq = SearchQuery(query="q", filters=None)
