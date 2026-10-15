@@ -219,8 +219,12 @@ class EventProcessor:
         if not md5_checksum:
             return False
 
+        # Records read through the graph provider carry their key as "id" ("_key"
+        # only in raw Arango documents). Without it the record finds itself as its
+        # own duplicate and is never processed: reindexes and updates are skipped.
+        record_key = doc.get("_key") or doc.get("id")
         duplicate_records = await self.graph_provider.find_duplicate_records(
-            record_key=doc.get('_key'),
+            record_key=record_key,
             md5_checksum=md5_checksum,
             record_type=record_type,
             size_in_bytes=size_in_bytes
@@ -229,7 +233,7 @@ class EventProcessor:
         duplicate_records = [r for r in duplicate_records if r is not None]
 
         if not duplicate_records:
-            self.logger.info(f"🚀 No duplicate records found for record {doc.get('_key')}")
+            self.logger.info(f"🚀 No duplicate records found for record {record_key}")
             return False
 
         # Check for processed or in-progress duplicates
@@ -255,7 +259,7 @@ class EventProcessor:
             # Copy all relationships from the processed duplicate to this document
             await self.graph_provider.copy_document_relationships(
                 processed_duplicate.get("_key") or processed_duplicate.get("id"),
-                doc.get("_key") or doc.get("id")
+                record_key
             )
             self.logger.info(f"✅ Duplicate record {processed_duplicate.get('_key')} returning TRUE")
             return True  # Duplicate handled
@@ -274,7 +278,7 @@ class EventProcessor:
             await self.graph_provider.batch_upsert_nodes([doc], CollectionNames.RECORDS.value)
             return True  # Marked as queued
 
-        self.logger.info(f"🚀 No duplicate found, proceeding with processing for {doc.get('_key')}")
+        self.logger.info(f"🚀 No duplicate found, proceeding with processing for {record_key}")
         return False  # No duplicate found, proceed with processing
 
     async def on_event(self, event_data: dict[str, Any]) -> AsyncGenerator[dict[str, Any], None]:
