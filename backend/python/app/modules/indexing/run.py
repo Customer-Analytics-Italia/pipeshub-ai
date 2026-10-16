@@ -5,6 +5,7 @@ from langchain_core.documents import Document
 from langchain_experimental.text_splitter import SemanticChunker
 from langchain_qdrant import FastEmbedSparse, QdrantVectorStore, RetrievalMode
 
+from app.services.vector_db.payload_indexes import ensure_payload_indexes
 from app.config.configuration_service import ConfigurationService
 from app.config.constants.arangodb import CollectionNames, ProgressStatus
 from app.config.constants.service import config_node_constants
@@ -17,7 +18,6 @@ from app.exceptions.indexing_exceptions import (
     MetadataProcessingError,
     VectorStoreError,
 )
-from app.services.vector_db.const.const import ORG_ID_FIELD, VIRTUAL_RECORD_ID_FIELD
 from app.services.vector_db.interface.vector_db import IVectorDBService
 from app.utils.aimodels import get_default_embedding_model, get_embedding_model
 from app.utils.time_conversion import get_epoch_timestamp_in_ms
@@ -398,20 +398,6 @@ class IndexingPipeline:
                 self.logger.info(
                     f"✅ Successfully created collection {self.collection_name}"
                 )
-                await self.vector_db_service.create_index(
-                    collection_name=self.collection_name,
-                    field_name=VIRTUAL_RECORD_ID_FIELD,
-                    field_schema={
-                        "type": "keyword",
-                    }
-                )
-                await self.vector_db_service.create_index(
-                    collection_name=self.collection_name,
-                    field_name=ORG_ID_FIELD,
-                    field_schema={
-                        "type": "keyword",
-                    }
-                )
             except Exception as e:
                 self.logger.error(
                     f"❌ Error creating collection {self.collection_name}: {str(e)}"
@@ -420,6 +406,8 @@ class IndexingPipeline:
                     "Failed to create collection",
                     details={"collection": self.collection_name, "error": str(e)},
                 )
+
+        await ensure_payload_indexes(self.vector_db_service, self.collection_name, self.logger)
 
     async def get_embedding_model_instance(self) -> bool:
         try:
