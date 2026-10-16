@@ -143,6 +143,8 @@ class TestInitializeCollection:
     @pytest.mark.asyncio
     async def test_indexes_created_on_new_collection(self):
         """When a new collection is created, indexes should also be created."""
+        from app.services.vector_db import payload_indexes
+        payload_indexes._ensured.clear()
         pipeline = _make_pipeline()
 
         pipeline.vector_db_service.get_collection = AsyncMock(return_value=None)
@@ -151,8 +153,28 @@ class TestInitializeCollection:
 
         await pipeline._initialize_collection(embedding_size=1024)
 
-        # Should create 2 indexes (virtualRecordId and orgId)
-        assert pipeline.vector_db_service.create_index.await_count == 2
+        # virtualRecordId, orgId and blockId (updates delete blocks by blockId)
+        fields = [c.kwargs["field_name"] for c in pipeline.vector_db_service.create_index.await_args_list]
+        assert fields == ["metadata.virtualRecordId", "metadata.orgId", "metadata.blockId"]
+
+    @pytest.mark.asyncio
+    async def test_indexes_ensured_on_an_existing_collection(self):
+        """A collection created before an index existed gets it too."""
+        from app.services.vector_db import payload_indexes
+        payload_indexes._ensured.clear()
+        pipeline = _make_pipeline()
+
+        info = MagicMock()
+        info.config.params.vectors = {"dense": MagicMock(size=1024)}
+        pipeline.vector_db_service.get_collection = AsyncMock(return_value=info)
+        pipeline.vector_db_service.create_collection = AsyncMock()
+        pipeline.vector_db_service.create_index = AsyncMock()
+
+        await pipeline._initialize_collection(embedding_size=1024)
+
+        pipeline.vector_db_service.create_collection.assert_not_awaited()
+        fields = [c.kwargs["field_name"] for c in pipeline.vector_db_service.create_index.await_args_list]
+        assert "metadata.blockId" in fields
 
 
 # ===================================================================

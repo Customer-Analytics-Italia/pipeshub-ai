@@ -14,6 +14,7 @@ from qdrant_client.http.models import PointStruct
 from spacy.language import Language
 from spacy.tokens import Doc
 
+from app.services.vector_db.payload_indexes import ensure_payload_indexes
 from app.config.constants.service import config_node_constants
 from app.exceptions.indexing_exceptions import (
     DocumentProcessingError,
@@ -322,20 +323,6 @@ class VectorStore(Transformer):
                 self.logger.info(
                     f"✅ Successfully created collection {self.collection_name}"
                 )
-                await self.vector_db_service.create_index(
-                    collection_name=self.collection_name,
-                    field_name="metadata.virtualRecordId",
-                    field_schema={
-                        "type": "keyword",
-                    },
-                )
-                await self.vector_db_service.create_index(
-                    collection_name=self.collection_name,
-                    field_name="metadata.orgId",
-                    field_schema={
-                        "type": "keyword",
-                    },
-                )
             except Exception as e:
                 self.logger.error(
                     f"❌ Error creating collection {self.collection_name}: {str(e)}"
@@ -345,7 +332,7 @@ class VectorStore(Transformer):
                     details={"collection": self.collection_name, "error": str(e)},
                 )
 
-
+        await ensure_payload_indexes(self.vector_db_service, self.collection_name, self.logger)
 
     async def get_embedding_model_instance(self) -> bool:
         try:
