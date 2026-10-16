@@ -1374,6 +1374,18 @@ class TestCheckDuplicateSourceKeyFallback:
     """Test processed_duplicate source key falls back to 'id' field."""
 
     @pytest.mark.asyncio
+    async def test_record_read_with_id_excludes_itself_from_duplicates(self):
+        """A record from get_document carries "id", not "_key": it must not be its own duplicate."""
+        ep, _, _, gp = _make_event_processor()
+        gp.find_duplicate_records.return_value = []
+        doc = {"id": "rec-1", "md5Checksum": "abc", "recordType": "FILE", "sizeInBytes": 10}
+
+        result = await ep._check_duplicate_by_md5(b"x", doc)
+
+        assert result is False
+        assert gp.find_duplicate_records.await_args.kwargs["record_key"] == "rec-1"
+
+    @pytest.mark.asyncio
     async def test_processed_duplicate_uses_id_when_key_missing(self):
         """copy_document_relationships uses processed_duplicate['id'] when _key is missing."""
         ep, _, _, gp = _make_event_processor()
