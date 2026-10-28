@@ -563,6 +563,40 @@ class TestPerformEmbeddingHealthCheck:
         assert resp.status_code == 400
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("configured", "expected"),
+        [([], 200), ([{"configuration": {"model": "BAAI/bge-large-en-v1.5"}}], 400)],
+        ids=["no-model-configured", "other-model-configured"],
+    )
+    async def test_model_name_only_checked_against_a_configured_model(self, mock_request, configured, expected) -> None:
+        """With the embedding model deleted (to change its key), the default name
+        says nothing about the collection: same dimensions pass."""
+        logger = MagicMock()
+        config = {"provider": "openAI", "configuration": {"model": "text-embedding-3-large"}}
+        dense_vec = MagicMock()
+        dense_vec.size = 3072
+        vectors = MagicMock()
+        vectors.get.return_value = dense_vec
+        coll_info = MagicMock()
+        coll_info.config.params.vectors = vectors
+        coll_info.points_count = 100
+
+        retrieval_svc = AsyncMock()
+        retrieval_svc.collection_name = "coll"
+        retrieval_svc.vector_db_service = AsyncMock()
+        retrieval_svc.vector_db_service.get_collection = AsyncMock(return_value=coll_info)
+        retrieval_svc.config_service.get_config = AsyncMock(return_value={"embedding": configured})
+        retrieval_svc.get_current_embedding_model_name = AsyncMock(return_value="BAAI/bge-large-en-v1.5")
+        mock_request.app.container.retrieval_service = AsyncMock(return_value=retrieval_svc)
+
+        with patch(f"{MODULE}.get_embedding_model", return_value=MagicMock()), \
+             patch("asyncio.wait_for", new_callable=AsyncMock, return_value=[[0.1] * 3072]):
+            from app.api.routes.health import perform_embedding_health_check
+            resp = await perform_embedding_health_check(mock_request, config, logger)
+
+        assert resp.status_code == expected
+
+    @pytest.mark.asyncio
     async def test_http_exception(self, mock_request):
         logger = MagicMock()
         config = {"provider": "openai", "configuration": {"model": "text-embedding-3-small"}}
