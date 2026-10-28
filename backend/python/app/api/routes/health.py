@@ -9,6 +9,7 @@ from fastapi import APIRouter, Body, HTTPException, Request  #type: ignore
 from fastapi.responses import JSONResponse  #type: ignore
 from langchain_core.messages import HumanMessage  #type: ignore
 
+from app.config.constants.service import config_node_constants
 from app.services.vector_db.const.const import ORG_ID_FIELD, VIRTUAL_RECORD_ID_FIELD
 from app.utils.aimodels import (
     ImageGenerationProvider,
@@ -667,7 +668,18 @@ async def perform_embedding_health_check(
 
                         # Check model identity — same dimensions but different
                         # model means incompatible vector spaces.
-                        current_model_name = await retrieval_service.get_current_embedding_model_name()
+                        # With no embedding model configured (e.g. deleted to change
+                        # its key) the "current" name is only the default, not what
+                        # built the collection: the dimension check above is all
+                        # that can be verified.
+                        ai_models = await retrieval_service.config_service.get_config(
+                            config_node_constants.AI_MODELS.value, use_cache=False
+                        )
+                        current_model_name = (
+                            await retrieval_service.get_current_embedding_model_name()
+                            if (ai_models or {}).get("embedding")
+                            else None
+                        )
                         new_provider = embedding_config.get("provider", "")
                         new_model = model_name
 
